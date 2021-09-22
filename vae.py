@@ -33,6 +33,7 @@ class BaseVAE(nn.Module):
     def loss_function(self, *inputs: Any, **kwargs) -> Tensor:
         pass
 
+
 class ConvVAE(BaseVAE):
 
 
@@ -47,7 +48,7 @@ class ConvVAE(BaseVAE):
 
         modules = []
         if hidden_dims is None:
-            hidden_dims = [96, 192, 384, 768, 1024, 1536]
+            hidden_dims = [32, 64, 128, 256, 512]
 
         # Build Encoder
         for h_dim in hidden_dims:
@@ -100,7 +101,7 @@ class ConvVAE(BaseVAE):
                             nn.LeakyReLU(),
                             nn.Conv2d(hidden_dims[-1], out_channels= 3,
                                       kernel_size= 3, padding= 1),
-                            nn.Tanh())
+                            nn.Sigmoid())
 
     def encode(self, input: Tensor) -> List[Tensor]:
         """
@@ -127,7 +128,7 @@ class ConvVAE(BaseVAE):
         :return: (Tensor) [B x C x H x W]
         """
         result = self.decoder_input(z)
-        result = result.view(-1, 1536, 2, 2)
+        result = result.view(-1, 512, 2, 2)
         result = self.decoder(result)
         result = self.final_layer(result)
         return result
@@ -167,7 +168,6 @@ class ConvVAE(BaseVAE):
         kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
         recons_loss =F.mse_loss(recons, input)
 
-
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
 
         loss = recons_loss + kld_weight * kld_loss
@@ -199,6 +199,7 @@ class ConvVAE(BaseVAE):
         """
 
         return self.forward(x)[0]
+
 
 
 class VectorVAE(BaseVAE):
@@ -252,7 +253,7 @@ class VectorVAE(BaseVAE):
                             nn.Linear(hidden_dims[-1], hidden_dims[-1]),
                             nn.ReLU(),
                             nn.Linear(hidden_dims[-1], hidden_dims[-1]),
-                            nn.Tanh())
+                            torch.sigmoid())
 
     def encode(self, input: Tensor) -> List[Tensor]:
         result = self.encoder(input)
