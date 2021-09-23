@@ -3,9 +3,9 @@ import sys
 import torch
 
 from arguments import get_args
-from ppo import PPO
-from vae import VectorVAE, ConvVAE
-from model import MLP, JumpingQuadruped
+from jumping_quadrupeds.models.ppo import PPO
+from jumping_quadrupeds.models.vae import VectorVAE, ConvVAE
+from jumping_quadrupeds.models.model import MLP, JumpingQuadruped
 from eval_policy import eval_policy
 
 from gym.wrappers.pixel_observation import PixelObservationWrapper

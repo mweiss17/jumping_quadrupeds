@@ -12,6 +12,9 @@ from io import BytesIO
 
 num_episodes = 1024 # 1024 # 2^10
 max_timesteps_per_episode = 200
+output_path = "vae_dataset.zip"
+num_processes = 32  # multiple of 2, ideally
+
 
 def writer(outbox, output_path, num_todo):
     "single process that writes compressed files to disk"
@@ -58,16 +61,13 @@ def gen_data(seed, outbox):
     return
 
 if __name__ == '__main__':
-    num_processes = 8 # multiple of 2, ideally
     num_todo = num_episodes * max_timesteps_per_episode
 
     outbox = mp.Queue(4*num_processes)  # limit size
-
     simulators = [mp.Process(target=gen_data, args=(seed, outbox)) for seed in range(num_processes)]
     for s in simulators: s.start()
 
     # one process to write
-    output_path = "vae_dataset.zip"
     writer = mp.Process(target=writer, args=(outbox, output_path, num_todo))
     writer.start()
     writer.join()  # wait for it to finish

@@ -18,8 +18,8 @@ from torch.distributions import MultivariateNormal
 import matplotlib.pyplot as plt
 from skimage.transform import resize
 
-from model import JumpingQuadruped
-from model import MLP
+from jumping_quadrupeds import JumpingQuadruped
+from jumping_quadrupeds import MLP
 
 
 class PPO:

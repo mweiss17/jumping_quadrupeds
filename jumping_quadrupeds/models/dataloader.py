@@ -4,7 +4,7 @@ from torchvision import transforms
 
 class Dataset(torch.utils.data.Dataset):
   'Characterizes a dataset for PyTorch'
-  def __init__(self, path="CarRacingSamples-201.pt"):
+  def __init__(self, path="data/random-rollouts-200k.zip"):
         self.path = path
         self.data = torch.FloatTensor(torch.moveaxis(torch.load(open(path, "rb")), 3, 1))
         self.data = transforms.Resize(64)(self.data)

@@ -5,8 +5,9 @@ import numpy as np
 import scipy.misc
 from torch import optim
 import matplotlib.pyplot as plt
-from dataloader import Dataset
-from vae import ConvVAE
+import jumping_quadrupeds
+from jumping_quadrupeds.models.dataloader import Dataset
+from jumping_quadrupeds.models.vae import ConvVAE
 
 # CUDA for PyTorch
 use_cuda = torch.cuda.is_available()
@@ -18,10 +19,10 @@ params = {'batch_size': 128,
           'shuffle': True,
           'num_workers': 6}
 max_epochs = 100
-
+print(os.getcwd())
 
 # Generators
-dataset = Dataset("CarRacingSamples-2010.pt")
+dataset = Dataset()
 
 split = dataset.data.shape[0]//8
 train = torch.utils.data.DataLoader(dataset[split:], **params)

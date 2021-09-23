@@ -1,6 +1,6 @@
 """
 	This file is used only to evaluate our trained policy/actor after
-	training in main.py with ppo.py. I wrote this file to demonstrate
+	training in 03-train-ppo-with-vae.py with ppo.py. I wrote this file to demonstrate
 	that our trained policy exists independently of our learning algorithm,
 	which resides in ppo.py. Thus, we can test our trained policy without
 	relying on ppo.py.
