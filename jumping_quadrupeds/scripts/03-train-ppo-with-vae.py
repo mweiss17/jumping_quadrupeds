@@ -47,7 +47,6 @@ def train(env, hyperparameters, actor_model, critic_model):
     # you can kill the process whenever you feel like PPO is converging
     model.learn(total_timesteps=200_000_000)
 
-
 def test(env, actor_model):
     """
     Tests the model.
@@ -108,6 +107,7 @@ def main(args):
     # observation and action spaces.
     env = gym.make(args.env)
     import pdb; pdb.set_trace()
+
     # env = FrameStack(env, num_stack=4)
     # env = PixelObservationWrapper(env, pixels_only=False, render_kwargs={"width": 96, "height": 64})
     # Train or test, depending on the mode specified
@@ -115,6 +115,9 @@ def main(args):
         train(env=env, hyperparameters=hyperparameters, actor_model=args.actor_model, critic_model=args.critic_model)
     else:
         test(env=env, actor_model=args.actor_model)
+    # TODO: add camera delta
+    # get env.env.car.hull.position and env.env.car.hull.angle
+    # subtract first step from each other
 
 
 if __name__ == '__main__':

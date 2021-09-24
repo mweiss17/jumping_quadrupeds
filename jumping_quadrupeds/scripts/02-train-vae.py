@@ -8,50 +8,94 @@ import matplotlib.pyplot as plt
 import jumping_quadrupeds
 from jumping_quadrupeds.models.dataloader import Dataset
 from jumping_quadrupeds.models.vae import ConvVAE
+from speedrun import BaseExperiment, WandBMixin, IOMixin
 
-# CUDA for PyTorch
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
-torch.backends.cudnn.benchmark = True
+class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
+    def __init__(self):
+        super(TrainVAE, self).__init__()
+        self.auto_setup()
+        WandBMixin.WANDB_PROJECT = "jumping_quadrupeds"
+        WandBMixin.WANDB_ENTITY = "mweiss10"
+        if self.get("use_wandb"):
+            self.initialize_wandb()
+        # Check result paths
+        if not os.path.isdir(self.get("paths/samples")):
+            os.makedirs(self.get("paths/samples"))
+        if not os.path.isdir(self.get("paths/checkpoints")):
+            os.makedirs(self.get("paths/checkpoints"))
 
-# Parameters
-params = {'batch_size': 128,
-          'shuffle': True,
-          'num_workers': 6}
-max_epochs = 100
-print(os.getcwd())
+        self._build()
 
-# Generators
-dataset = Dataset()
+    def _build(self):
+        # CUDA for PyTorch
+        use_cuda = torch.cuda.is_available()
+        self.device = torch.device("cuda:1" if use_cuda else "cpu")
+        torch.backends.cudnn.benchmark = True
 
-split = dataset.data.shape[0]//8
-train = torch.utils.data.DataLoader(dataset[split:], **params)
-valid = torch.utils.data.DataLoader(dataset[:split], **params)
+        # Generators
+        dataset = Dataset(max_num_samples=self.get('max_num_samples', None))
 
-model = ConvVAE(in_channels=3, latent_dim=96)
-model.to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=.95)
-# Loop over epochs
-for epoch in tqdm(range(max_epochs), desc="epochs..."):
-    for batch in train:
-        batch = batch.to(device)
-        x_hat, input, mu, log_var = model(batch)
-        loss = model.loss_function(x_hat, input, mu, log_var, M_N=1)
-        optimizer.zero_grad()
-        loss['loss'].backward()
-        optimizer.step()
-        print(f"loss: {loss}, lr: {scheduler.get_lr()}")
-    scheduler.step()
-    if not os.path.isdir("vae_results"):
-        os.makedirs("vae_results")
-    true_image = batch[0].detach().transpose(0, 2).cpu().numpy()
-    plt.imsave(f"vae_results/true-epoch{epoch}.jpg", true_image)
-    generated = x_hat[0].detach().transpose(0, 2).cpu().numpy()
-    generated = ((generated+1)/2)
-    plt.imsave(f"vae_results/generated-epoch{epoch}.jpg", generated)
+        split = dataset.data.shape[0]//8
+        self.train = torch.utils.data.DataLoader(dataset[split:], **self.get("dataloader"))
+        self.valid = torch.utils.data.DataLoader(dataset[:split], **self.get("dataloader"))
 
-    # # Validation
-    # with torch.set_grad_enabled(False):
-    #     for local_batch, local_labels in validation_generator:
+        self.model = ConvVAE(in_channels=3, latent_dim=32)
+        self.model.to(self.device)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=.95)
 
+
+    def run(self):
+        # train loop
+        for epoch in tqdm(range(self.get("num_epochs")), desc="epochs..."):
+
+            # Train the model
+            for batch in tqdm(self.train, desc="batches..."):
+                batch = batch.to(self.device)
+                x_hat, input, mu, log_var = self.model(batch)
+                loss = self.model.loss_function(x_hat, input, mu, log_var, M_N=self.get('dataloader/batch_size'))
+                self.optimizer.zero_grad()
+                loss['loss'].backward()
+                self.optimizer.step()
+                self.next_step()
+                if self.get("use_wandb") and self.step % self.get("log_wandb_every") == 0:
+                    self.wandb_log(**{"train_loss": loss, "lr": self.scheduler.get_lr()})
+
+            self.next_epoch()
+
+            # log gradients once per epoch
+            if self.get("use_wandb"):
+                self.wandb_watch(self.model, loss, log_freq=1)
+
+            self.scheduler.step()
+
+            # Plot samples
+            sampleid = np.random.choice(range(0, len(batch)))
+            true_image = batch[sampleid].detach().cpu().moveaxis(0, 2).numpy()
+            generated_image = x_hat[sampleid].detach().cpu().moveaxis(0, 2).numpy()
+            if self.get("use_wandb"):
+                self.wandb_log_image("true image", np.rollaxis(true_image, 2, 0))
+                self.wandb_log_image("generated image", np.rollaxis(generated_image, 2, 0))
+            else:
+                true_sample_path = os.path.join(self.get('paths/samples'), f"true-epoch{epoch}.jpg")
+                generated_sample_path = os.path.join(self.get('paths/samples'), f"generated-epoch{epoch}.jpg")
+                plt.imsave(true_sample_path, true_image)
+                plt.imsave(generated_sample_path, generated_image)
+
+            # Checkpoint
+            if epoch % self.get("checkpoint_every") == 0:
+                torch.save(self.model.state_dict(), open(f"results/vae-checkpoints/vae-{epoch}.pt", 'wb'))
+
+            # Run Validation
+            if epoch % self.get("valid_every") == 0:
+                self.model.eval()
+                for valbatch in tqdm(self.valid, "valid batches..."):
+                    valbatch = valbatch.to(self.device)
+                    x_hat, input, mu, log_var = self.model(valbatch)
+                    loss = self.model.loss_function(x_hat, input, mu, log_var, M_N=self.get('dataloader/batch_size'))
+                    if self.get("use_wandb"):
+                        self.wandb_log(**{"valid_loss": loss, "lr": self.scheduler.get_lr()})
+                self.model.train()
+
+if __name__ == '__main__':
+    TrainVAE().run()
