@@ -106,7 +106,6 @@ def main(args):
     # custom environment, note that it must inherit Gym and have both continuous
     # observation and action spaces.
     env = gym.make(args.env)
-    import pdb; pdb.set_trace()
 
     # env = FrameStack(env, num_stack=4)
     # env = PixelObservationWrapper(env, pixels_only=False, render_kwargs={"width": 96, "height": 64})

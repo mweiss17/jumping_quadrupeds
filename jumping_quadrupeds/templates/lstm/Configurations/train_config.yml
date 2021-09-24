@@ -1,0 +1,18 @@
+dataloader:
+  batch_size: 1024
+  shuffle: "False"
+  num_workers: 12
+
+max_num_samples: 1000 # uncomment if you want to limit the number of samples to load
+num_epochs: 100
+checkpoint_every: 1
+valid_every: 1
+log_wandb_every: 10
+use_wandb: "False"
+
+paths:
+  samples: "results/lstm-samples/"
+  checkpoints: "results/lstm-checkpoints/"
+  vae_weights: "results/vae-checkpoints/vae-71.pt"
+
+
