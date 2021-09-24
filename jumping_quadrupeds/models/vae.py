@@ -286,7 +286,7 @@ class VectorVAE(BaseVAE):
         mu = args[2]
         log_var = args[3]
 
-        kld_weight = 1024/46000#kwargs['M_N'] # Account for the minibatch samples from the dataset
+        kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
         recons_loss =F.mse_loss(recons, input)
 
 
