@@ -33,7 +33,7 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
         torch.backends.cudnn.benchmark = True
 
         # Generators
-        dataset = Dataset(max_num_samples=self.get('max_num_samples', None))
+        dataset = Dataset(self.get("paths/rollouts"), max_num_samples=self.get('max_num_samples', None))
 
         split = dataset.data.shape[0]//8
         self.train = torch.utils.data.DataLoader(dataset[split:], **self.get("dataloader"))
@@ -41,7 +41,7 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
 
         self.model = ConvVAE(in_channels=3, latent_dim=32)
         self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=.95)
 
 
@@ -58,8 +58,9 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
                 loss['loss'].backward()
                 self.optimizer.step()
                 self.next_step()
-                if self.get("use_wandb") and self.step % self.get("log_wandb_every") == 0:
-                    self.wandb_log(**{"train_loss": loss, "lr": self.scheduler.get_lr()})
+                if self.get("use_wandb"):
+                    self.wandb_log(**{"train_loss": loss})
+                    self.wandb_log(**{"lr": self.scheduler.get_lr()[0]})
 
             self.next_epoch()
 
@@ -94,7 +95,9 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
                     x_hat, input, mu, log_var = self.model(valbatch)
                     loss = self.model.loss_function(x_hat, input, mu, log_var, M_N=self.get('dataloader/batch_size'))
                     if self.get("use_wandb"):
-                        self.wandb_log(**{"valid_loss": loss, "lr": self.scheduler.get_lr()})
+                        self.wandb_log(**{"valid_loss": loss})
+                        self.wandb_log(**{"lr": self.scheduler.get_lr()})
+
                 self.model.train()
 
 if __name__ == '__main__':

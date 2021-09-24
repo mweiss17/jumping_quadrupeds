@@ -15,7 +15,7 @@ def show_sample(array):
 
 class Dataset(torch.utils.data.Dataset):
   'Characterizes a dataset for PyTorch'
-  def __init__(self, path="data/random-rollouts-200k.zip", max_num_samples=None):
+  def __init__(self, path, max_num_samples=None):
         self.path = path
         archive = zipfile.ZipFile(path, 'r')
         max_num_samples = max_num_samples if max_num_samples else len(archive.namelist())
@@ -32,9 +32,9 @@ class Dataset(torch.utils.data.Dataset):
         self.data = torch.FloatTensor(torch.moveaxis(self.data, 3, 1))
         self.data = transforms.Resize(64)(self.data)
         self.data = self.data/255.
-        self.data[:, 0] = (self.data[:, 0] - self.data[:, 0].mean())/self.data[:,0].std()
-        self.data[:, 1] = (self.data[:, 1] - self.data[:, 1].mean())/self.data[:,1].std()
-        self.data[:, 2] = (self.data[:, 2] - self.data[:, 2].mean())/self.data[:,2].std()
+        # self.data[:, 0] = (self.data[:, 0] - self.data[:, 0].mean())/self.data[:,0].std()
+        # self.data[:, 1] = (self.data[:, 1] - self.data[:, 1].mean())/self.data[:,1].std()
+        # self.data[:, 2] = (self.data[:, 2] - self.data[:, 2].mean())/self.data[:,2].std()
         self.data = torch.clip(self.data, -1., 1.)
         self.data = (self.data + 1.0)/2.0
 

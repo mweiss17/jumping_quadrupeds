@@ -10,9 +10,9 @@ from multiprocessing import Pool
 from PIL import Image, ImageFile
 from io import BytesIO
 
-num_episodes = 1024 # 1024 # 2^10
+num_episodes = 256 # 1024 # 2^10
 max_timesteps_per_episode = 200
-output_path = "vae_dataset.zip"
+output_path = "data/random-rollouts-50k.zip"
 num_processes = 32  # multiple of 2, ideally
 
 
@@ -52,10 +52,10 @@ def gen_data(seed, outbox):
         obs = env.reset()
 
         for t in range(max_timesteps_per_episode+10):
-            if t < 10:
-                continue
             action = get_action(obs)
             obs, rew, done, _ = env.step(action)
+            if t < 30:
+                continue
             outbox.put([f"{i}-{t}.png", obs.tobytes()])
     print(f"gen_data {seed} finished")
     return
