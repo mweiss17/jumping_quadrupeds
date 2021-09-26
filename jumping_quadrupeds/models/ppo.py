@@ -7,23 +7,15 @@ It can be found here: https://spinningup.openai.com/en/latest/_images/math/e62a8
 
 
 import gym
-import time
-
 import numpy as np
 import time
 import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.distributions import MultivariateNormal
-import matplotlib.pyplot as plt
-from skimage.transform import resize
-
-from jumping_quadrupeds import JumpingQuadruped
-from jumping_quadrupeds import MLP
 
 
 class PPO:
-
     def __init__(self, policy_class, vae_class, lstm_class, env, **hyperparameters):
         """
         Initializes the PPO model, including hyperparameters.
@@ -37,7 +29,7 @@ class PPO:
         # Make sure the environment is compatible with our code
 
         # assert (type(env.observation_space) == gym.spaces.Box)
-        assert (type(env.action_space) == gym.spaces.Box)
+        assert type(env.action_space) == gym.spaces.Box
 
         # Initialize hyperparameters for training with PPO
         self._init_hyperparameters(hyperparameters)
@@ -55,7 +47,7 @@ class PPO:
         # Initialize state encoders
         vae_latent_dim = 32
         self.vae = vae_class(in_channels=3, latent_dim=vae_latent_dim)
-        self.lstm = lstm_class(2*vae_latent_dim, self.obs_state_dim, 1) # input size, hidden size, num layers
+        self.lstm = lstm_class(2 * vae_latent_dim, self.obs_state_dim, 1)  # input size, hidden size, num layers
         self.h_n = torch.randn(1, 1, self.obs_state_dim)
         self.c_n = torch.randn(1, 1, self.obs_state_dim)
 
@@ -71,15 +63,14 @@ class PPO:
         self.cov_var = torch.full(size=(self.act_dim,), fill_value=0.5)
         self.cov_mat = torch.diag(self.cov_var)
 
-
         # This logger will help us with printing out summaries of each iteration
         self.logger = {
-            'delta_t': time.time_ns(),
-            't_so_far': 0,  # timesteps so far
-            'i_so_far': 0,  # iterations so far
-            'batch_lens': [],  # episodic lengths in batch
-            'batch_rews': [],  # episodic returns in batch
-            'actor_losses': [],  # losses of actor network in current iteration
+            "delta_t": time.time_ns(),
+            "t_so_far": 0,  # timesteps so far
+            "i_so_far": 0,  # iterations so far
+            "batch_lens": [],  # episodic lengths in batch
+            "batch_rews": [],  # episodic returns in batch
+            "actor_losses": [],  # losses of actor network in current iteration
         }
 
     def learn(self, total_timesteps):
@@ -90,13 +81,15 @@ class PPO:
         Return:
             None
         """
-        print(f"Learning... Running {self.max_timesteps_per_episode} timesteps per episode, ", end='')
+        print(
+            f"Learning... Running {self.max_timesteps_per_episode} timesteps per episode, ", end="",
+        )
         print(f"{self.timesteps_per_batch} timesteps per batch for a total of {total_timesteps} timesteps")
         t_so_far = 0  # Timesteps simulated so far
         i_so_far = 0  # Iterations ran so far
         while t_so_far < total_timesteps:  # ALG STEP 2
             # Autobots, roll out (just kidding, we're collecting our batch simulations here)
-            batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens = self.rollout()  # ALG STEP 3
+            (batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens,) = self.rollout()  # ALG STEP 3
 
             # Calculate how many timesteps we collected this batch
             t_so_far += np.sum(batch_lens)
@@ -105,8 +98,8 @@ class PPO:
             i_so_far += 1
 
             # Logging timesteps so far and iterations so far
-            self.logger['t_so_far'] = t_so_far
-            self.logger['i_so_far'] = i_so_far
+            self.logger["t_so_far"] = t_so_far
+            self.logger["i_so_far"] = i_so_far
 
             # Calculate advantage at k-th iteration
             V, _ = self.evaluate(batch_obs, batch_acts)
@@ -154,15 +147,15 @@ class PPO:
                 self.critic_optim.step()
 
                 # Log actor loss
-                self.logger['actor_losses'].append(actor_loss.detach())
+                self.logger["actor_losses"].append(actor_loss.detach())
 
             # Print a summary of our training so far
             self._log_summary()
 
             # Save our model if it's time
             if i_so_far % self.save_freq == 0:
-                torch.save(self.actor.state_dict(), './ppo_actor.pth')
-                torch.save(self.critic.state_dict(), './ppo_critic.pth')
+                torch.save(self.actor.state_dict(), "./ppo_actor.pth")
+                torch.save(self.critic.state_dict(), "./ppo_critic.pth")
 
     def rollout(self):
         """
@@ -202,7 +195,7 @@ class PPO:
             # Run an episode for a maximum of max_timesteps_per_episode timesteps
             for ep_t in range(self.max_timesteps_per_episode):
                 # If render is specified, render the environment
-                if self.render and (self.logger['i_so_far'] % self.render_every_i == 0) and len(batch_lens) == 0:
+                if self.render and (self.logger["i_so_far"] % self.render_every_i == 0) and len(batch_lens) == 0:
                     self.env.render()
 
                 t += 1  # Increment timesteps ran this batch so far
@@ -238,8 +231,8 @@ class PPO:
         batch_rtgs = self.compute_rtgs(batch_rews)  # ALG STEP 4
 
         # Log the episodic returns and episodic lengths in this batch.
-        self.logger['batch_rews'] = batch_rews
-        self.logger['batch_lens'] = batch_lens
+        self.logger["batch_rews"] = batch_rews
+        self.logger["batch_lens"] = batch_lens
 
         return batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens
 
@@ -359,12 +352,12 @@ class PPO:
 
         # Change any default values to custom values for specified hyperparameters
         for param, val in hyperparameters.items():
-            exec('self.' + param + ' = ' + str(val))
+            exec("self." + param + " = " + str(val))
 
         # Sets the seed if specified
         if self.seed != None:
             # Check if our seed is valid first
-            assert (type(self.seed) == int)
+            assert type(self.seed) == int
 
             # Set the seed
             torch.manual_seed(self.seed)
@@ -381,16 +374,16 @@ class PPO:
         # Calculate logging values. I use a few python shortcuts to calculate each value
         # without explaining since it's not too important to PPO; feel free to look it over,
         # and if you have any questions you can email me (look at bottom of README)
-        delta_t = self.logger['delta_t']
-        self.logger['delta_t'] = time.time_ns()
-        delta_t = (self.logger['delta_t'] - delta_t) / 1e9
+        delta_t = self.logger["delta_t"]
+        self.logger["delta_t"] = time.time_ns()
+        delta_t = (self.logger["delta_t"] - delta_t) / 1e9
         delta_t = str(round(delta_t, 2))
 
-        t_so_far = self.logger['t_so_far']
-        i_so_far = self.logger['i_so_far']
-        avg_ep_lens = np.mean(self.logger['batch_lens'])
-        avg_ep_rews = np.mean([np.sum(ep_rews) for ep_rews in self.logger['batch_rews']])
-        avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
+        t_so_far = self.logger["t_so_far"]
+        i_so_far = self.logger["i_so_far"]
+        avg_ep_lens = np.mean(self.logger["batch_lens"])
+        avg_ep_rews = np.mean([np.sum(ep_rews) for ep_rews in self.logger["batch_rews"]])
+        avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger["actor_losses"]])
 
         # Round decimal places for more aesthetic logging messages
         avg_ep_lens = str(round(avg_ep_lens, 2))
@@ -399,7 +392,9 @@ class PPO:
 
         # Print logging statements
         print(flush=True)
-        print(f"-------------------- Iteration #{i_so_far} --------------------", flush=True)
+        print(
+            f"-------------------- Iteration #{i_so_far} --------------------", flush=True,
+        )
         print(f"Average Episodic Length: {avg_ep_lens}", flush=True)
         print(f"Average Episodic Return: {avg_ep_rews}", flush=True)
         print(f"Average Loss: {avg_actor_loss}", flush=True)
@@ -409,6 +404,6 @@ class PPO:
         print(flush=True)
 
         # Reset batch-specific logging data
-        self.logger['batch_lens'] = []
-        self.logger['batch_rews'] = []
-        self.logger['actor_losses'] = []
+        self.logger["batch_lens"] = []
+        self.logger["batch_rews"] = []
+        self.logger["actor_losses"] = []

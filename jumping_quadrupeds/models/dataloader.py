@@ -13,11 +13,13 @@ def show_sample(array):
     plt.imshow(array[sampleid].moveaxis(0, 2))
     plt.show()
 
+
 class Dataset(torch.utils.data.Dataset):
-  'Characterizes a dataset for PyTorch'
-  def __init__(self, path, max_num_samples=None):
+    "Characterizes a dataset for PyTorch"
+
+    def __init__(self, path, max_num_samples=None):
         self.path = path
-        archive = zipfile.ZipFile(path, 'r')
+        archive = zipfile.ZipFile(path, "r")
         max_num_samples = max_num_samples if max_num_samples else len(archive.namelist())
         shape = (max_num_samples, 96, 96, 3)
         self.data = torch.zeros(shape)
@@ -31,16 +33,16 @@ class Dataset(torch.utils.data.Dataset):
             self.data[i] = torch.IntTensor(np.asarray(img))
         self.data = torch.FloatTensor(torch.moveaxis(self.data, 3, 1))
         self.data = transforms.Resize(64)(self.data)
-        self.data = self.data/255.
+        self.data = self.data / 255.0
         # self.data[:, 0] = (self.data[:, 0] - self.data[:, 0].mean())/self.data[:,0].std()
         # self.data[:, 1] = (self.data[:, 1] - self.data[:, 1].mean())/self.data[:,1].std()
         # self.data[:, 2] = (self.data[:, 2] - self.data[:, 2].mean())/self.data[:,2].std()
-        self.data = torch.clip(self.data, -1., 1.)
-        self.data = (self.data + 1.0)/2.0
+        self.data = torch.clip(self.data, -1.0, 1.0)
+        self.data = (self.data + 1.0) / 2.0
 
-  def __len__(self):
-        'Denotes the total number of samples'
+    def __len__(self):
+        "Denotes the total number of samples"
         return self.data.shape[0]
 
-  def __getitem__(self, index):
+    def __getitem__(self, index):
         return self.data[index]
