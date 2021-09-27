@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from vae import VectorVAE
+
 
 class MLP(nn.Module):
     def __init__(self, input_size, output_size):
@@ -12,11 +12,11 @@ class MLP(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-
         x = F.relu(self.fc2(x))
-
         x = torch.sigmoid(self.fc3(x))
         return x
+
+
 # The VAE has a latent space dimension of 32. The LSTM
 # networks have 2 layers and a hidden state of dimension 128,
 # which is mapped to the parameters of the latent distribution
