@@ -1,4 +1,35 @@
+# Archives
 *.zip
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# IDE
+.vscode/
+*.code-workspace
 *.idea/
-*__pycache__/
+
+# PyTorch binaries
 *.pth
+*.pth.tar
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# virtualenv
+.venv
+venv/
+ENV/
+
+# DS_Store
+*.DS_Store
+
+# Experiments logging
+experiments/**/*
