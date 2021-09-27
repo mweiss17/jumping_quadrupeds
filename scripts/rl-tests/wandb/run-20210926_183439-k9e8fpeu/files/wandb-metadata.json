@@ -1,0 +1,22 @@
+{
+    "os": "Darwin-20.6.0-x86_64-i386-64bit",
+    "python": "3.7.7",
+    "heartbeatAt": "2021-09-26T22:34:49.126217",
+    "startedAt": "2021-09-26T22:34:39.076149",
+    "docker": null,
+    "cpu_count": 12,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/Users/florian/dev/jumping_quadrupeds/scripts/rl-tests/01-simple-ppo-test.py",
+    "codePath": "scripts/rl-tests/01-simple-ppo-test.py",
+    "git": {
+        "remote": "git@github.com:mweiss17/jumping_quadrupeds.git",
+        "commit": "ec76ca1ed92bf97d26eb002f878fbb5824e5d60c"
+    },
+    "email": "fgolemo@gmail.com",
+    "root": "/Users/florian/dev/jumping_quadrupeds",
+    "host": "flobookpro.local",
+    "username": "florian",
+    "executable": "/Users/florian/miniconda3/bin/python"
+}

@@ -13,6 +13,7 @@ setup(
     install_requires=[
         "torch>=1.8",
         "tqdm",
+        "attrs",
         "gym[box2d]",
         "pillow",
         "scipy",

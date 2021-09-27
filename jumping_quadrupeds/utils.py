@@ -1,7 +1,7 @@
 import argparse
 
 
-def get_args():
+def get_args():  # TODO make this `get_args_ppo()` or something more specific
     """
     Description:
     Parses arguments at command line.
