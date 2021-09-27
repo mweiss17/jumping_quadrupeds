@@ -80,7 +80,9 @@ class MLPGaussianActor(Actor):
         return Normal(mu, std)
 
     def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act).sum(axis=-1)  # Last axis sum needed for Torch Normal distribution
+        return pi.log_prob(act).sum(
+            axis=-1
+        )  # Last axis sum needed for Torch Normal distribution
 
 
 class MLPCritic(nn.Module):
@@ -90,7 +92,9 @@ class MLPCritic(nn.Module):
 
     def forward(self, obs):
         # print("critic", obs.shape) # [minibatch, rp (5*128)]
-        return torch.squeeze(self.v_net(obs), -1)  # Critical to ensure v has right shape.
+        return torch.squeeze(
+            self.v_net(obs), -1
+        )  # Critical to ensure v has right shape.
 
 
 class CNNCritic(nn.Module):
@@ -120,52 +124,54 @@ class AbstractActorCritic(nn.Module):
     v: nn.Module  # value function/network
 
     def step(self, obs):
-        """ take an observation, return the action, value, log probability of the action under the current policy
-        """
+        """take an observation, return the action, value, log probability of the action under the current policy"""
         pass
 
     def act(self, obs):
-        """ same as the `step()` function but only return the action
-        """
+        """same as the `step()` function but only return the action"""
         return self.step(obs)[0]
 
     def save(self, folder, filename):
-        """ save the current policy and value functions to a folder.
-        """
+        """save the current policy and value functions to a folder."""
         # TODO
         pass
 
     def load(self, filepath):
-        """ restore saved policy and value func
-        """
+        """restore saved policy and value func"""
         # TODO
         pass
 
     def get_policy_params(self):
-        """ return the parameters of all networks involved in the policy for the optimizer
-        """
+        """return the parameters of all networks involved in the policy for the optimizer"""
         pass
 
     def get_value_params(self):
-        """ return the parameters of all networks involved in the value function for the optimizer
-        """
+        """return the parameters of all networks involved in the value function for the optimizer"""
         pass
 
 
 class MLPActorCritic(AbstractActorCritic):
-    def __init__(self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh):
+    def __init__(
+        self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh
+    ):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
 
         # policy builder depends on action space
         if isinstance(action_space, Box):
-            self.pi = MLPGaussianActor(obs_dim, action_space.shape[0], hidden_sizes, activation)
+            self.pi = MLPGaussianActor(
+                obs_dim, action_space.shape[0], hidden_sizes, activation
+            )
         elif isinstance(action_space, Discrete):
-            self.pi = MLPCategoricalActor(obs_dim, action_space.n, hidden_sizes, activation)
+            self.pi = MLPCategoricalActor(
+                obs_dim, action_space.n, hidden_sizes, activation
+            )
 
         # build value function
         self.v = MLPCritic(obs_dim, hidden_sizes, activation)
+        self.pi = self.pi.to(self.params.device)
+        self.v = self.v.to(self.params.device)
 
     def step(self, obs):
         with torch.no_grad():
@@ -183,7 +189,9 @@ class MLPActorCritic(AbstractActorCritic):
 
 
 class MLPSharedActorCritic(AbstractActorCritic):
-    def __init__(self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh):
+    def __init__(
+        self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh
+    ):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
@@ -192,9 +200,13 @@ class MLPSharedActorCritic(AbstractActorCritic):
 
         # policy builder depends on action space
         if isinstance(action_space, Box):
-            self._pi = MLPGaussianActor(hidden_sizes[-1], action_space.shape[0], [], activation)
+            self._pi = MLPGaussianActor(
+                hidden_sizes[-1], action_space.shape[0], [], activation
+            )
         elif isinstance(action_space, Discrete):
-            self._pi = MLPCategoricalActor(hidden_sizes[-1], action_space.n, [], activation)
+            self._pi = MLPCategoricalActor(
+                hidden_sizes[-1], action_space.n, [], activation
+            )
 
         # build value function
         self._v = MLPCritic(hidden_sizes[-1], [], activation)

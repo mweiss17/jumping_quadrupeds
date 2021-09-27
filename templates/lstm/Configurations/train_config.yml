@@ -11,8 +11,6 @@ log_wandb_every: 10
 use_wandb: "False"
 
 paths:
-  samples: "results/lstm-samples/"
-  checkpoints: "results/lstm-checkpoints/"
-  vae_weights: "results/vae-checkpoints/vae-71.pt"
+  vae_weights: "logs/vae-checkpoints/vae-71.pt"
 
 

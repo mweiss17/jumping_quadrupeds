@@ -8,7 +8,7 @@ from io import BytesIO
 
 num_episodes = 256  # 1024 # 2^10
 max_timesteps_per_episode = 200
-output_path = "data/random-rollouts-50k.zip"
+output_path = "random-rollouts-50k.zip"
 num_processes = 32  # multiple of 2, ideally
 
 
@@ -61,7 +61,9 @@ def gen_data(seed, outbox):
 num_todo = num_episodes * max_timesteps_per_episode
 
 outbox = mp.Queue(4 * num_processes)  # limit size
-simulators = [mp.Process(target=gen_data, args=(seed, outbox)) for seed in range(num_processes)]
+simulators = [
+    mp.Process(target=gen_data, args=(seed, outbox)) for seed in range(num_processes)
+]
 for s in simulators:
     s.start()
 

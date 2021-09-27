@@ -7,30 +7,40 @@ from jumping_quadrupeds.rl.networks import MLPActorCritic
 from jumping_quadrupeds.rl.params import PpoParams
 from jumping_quadrupeds.rl.ppo import PPO
 
-SEED = 123
-ENV = "CartPole-v0"
-WANDB_PROJ = "rl-tests"
-WANDB_GROUP = "vnav-cartpole"
 
-params = PpoParams(env_name=ENV, seed=SEED, verbose=True)
-wandb.init(project=WANDB_PROJ, group=WANDB_GROUP, config=params)
+class TrainPPO(BaseExperiment, WandBMixin, IOMixin):
+    def __init__(self):
+        super(TrainPPO, self).__init__()
+        self.auto_setup()
+        WandBMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBMixin.WANDB_PROJECT = "rl-tests"
+        WandBMixin.WANDB_GROUP = "vnav-cartpole"
 
-# seed stuff
-np.random.seed(SEED)
-torch.random.manual_seed(SEED)
+        if self.get("use_wandb"):
+            self.initialize_wandb()
 
-# env setup
-env = gym.make(ENV)
-env.seed(SEED)
+        self.ENV = self.get("ENV", "CartPole-v0")
+        self.SEED = self.get("SEED", 58235)
+        np.random.seed(self.SEED)
+        torch.random.manual_seed(self.SEED)
 
-# policy and value networks
-ac = MLPActorCritic(env.observation_space, env.action_space)
-wandb.watch(ac.pi)
-wandb.watch(ac.v)
+        # env setup
+        self.env = gym.make(self.ENV)
+        self.env.seed(self.SEED)
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-# buffer
-buf = PpoBuffer(env.observation_space.shape, env.action_space.shape, params)
+        # policy and value networks
+        self.ac = MLPActorCritic(self.env.observation_space, self.env.action_space)
+        wandb.watch(self.ac.pi)
+        wandb.watch(self.ac.v)
 
-ppo = PPO(env, ac, params, buf, wandb)
+        # buffer
+        buf = PpoBuffer(
+            self.env.observation_space.shape, self.env.action_space.shape, self
+        )
 
-ppo.train_loop()
+        ppo = PPO(self, self.env, self.ac, buf)
+
+
+def run(self):
+    self.ppo.train_loop()

@@ -16,7 +16,14 @@ class PPO:
     with early stopping based on approximate KL
     """
 
-    def __init__(self, env, actor_critic: AbstractActorCritic, params: PpoParams, buf: PpoBuffer, wandb=None) -> None:
+    def __init__(
+        self,
+        env,
+        actor_critic: AbstractActorCritic,
+        params: PpoParams,
+        buf: PpoBuffer,
+        wandb=None,
+    ) -> None:
 
         self.env = env
         self.params = params
@@ -39,36 +46,38 @@ class PPO:
         self.total_steps = 0
 
     def compute_loss_pi(self, data):
-        """ Computes policy loss
-        """
+        """Computes policy loss"""
 
         obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
 
         # Policy loss
         pi, logp = self.ac.pi(obs, act)
         ratio = torch.exp(logp - logp_old)
-        clip_adv = torch.clamp(ratio, 1 - self.params.clip_ratio, 1 + self.params.clip_ratio) * adv
+        clip_adv = (
+            torch.clamp(ratio, 1 - self.params.clip_ratio, 1 + self.params.clip_ratio)
+            * adv
+        )
         loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
 
         # Useful extra info
         approx_kl = (logp_old - logp).mean().item()
         ent = pi.entropy().mean().item()
-        clipped = ratio.gt(1 + self.params.clip_ratio) | ratio.lt(1 - self.params.clip_ratio)
+        clipped = ratio.gt(1 + self.params.clip_ratio) | ratio.lt(
+            1 - self.params.clip_ratio
+        )
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
         pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
 
         return loss_pi, pi_info
 
     def compute_loss_v(self, data):
-        """ Computes value loss
-        """
+        """Computes value loss"""
 
         obs, ret = data["obs"], data["ret"]
         return ((self.ac.v(obs) - ret) ** 2).mean()
 
     def update(self):
-        """ Updates the policy and value function based on the latest replay buffer
-        """
+        """Updates the policy and value function based on the latest replay buffer"""
 
         data = self.buf.get()
 
@@ -89,7 +98,9 @@ class PPO:
             kl = np.mean(pi_info["kl"])
             if kl > 1.5 * self.params.target_kl:
                 if self.params.verbose:
-                    tqdm.write(f"Early stopping at step {i}/{self.params.train_pi_iters} due to reaching max kl.")
+                    tqdm.write(
+                        f"Early stopping at step {i}/{self.params.train_pi_iters} due to reaching max kl."
+                    )
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
@@ -117,8 +128,7 @@ class PPO:
         # )
 
     def train_loop(self):
-        """ Automatic training loop for PPO that trains for prespecified number of epochs
-        """
+        """Automatic training loop for PPO that trains for prespecified number of epochs"""
 
         # Main loop: collect experience in env and update/log each epoch
         for epoch in trange(self.params.epochs):
@@ -127,7 +137,9 @@ class PPO:
             self.collect_data()
 
             # Save model
-            if (epoch % self.params.save_freq == 0) or (epoch == self.params.epochs - 1):
+            if (epoch % self.params.save_freq == 0) or (
+                epoch == self.params.epochs - 1
+            ):
                 # logger.save_state({"env": env}, None)
                 pass
                 # TODO save actor critic state
@@ -155,8 +167,7 @@ class PPO:
         # logger.dump_tabular()
 
     def collect_data(self):
-        """ Fill up the replay buffer with fresh rollouts based on the current policy
-        """
+        """Fill up the replay buffer with fresh rollouts based on the current policy"""
 
         if self.obs is None:
             self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
@@ -193,10 +204,16 @@ class PPO:
             if terminal or epoch_ended:
                 episode_counter += 1
                 if epoch_ended and not terminal and self.params.verbose:
-                    tqdm.write(f"Warning: trajectory cut off by epoch at {self.ep_len} steps.")
+                    tqdm.write(
+                        f"Warning: trajectory cut off by epoch at {self.ep_len} steps."
+                    )
                 # if trajectory didn't reach terminal state, bootstrap value target
                 if timeout or epoch_ended:
-                    _, self.val, _ = self.ac.step(torch.as_tensor(self.obs, dtype=torch.float32).to(self.params.device))
+                    _, self.val, _ = self.ac.step(
+                        torch.as_tensor(self.obs, dtype=torch.float32).to(
+                            self.params.device
+                        )
+                    )
                 else:
                     self.val = 0
 
@@ -222,8 +239,7 @@ class PPO:
                 self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
 
     def play(self, episodes=3):
-        """ play n episodes with the current policy and return the observations, rewards, and actions
-        """
+        """play n episodes with the current policy and return the observations, rewards, and actions"""
 
         obs = self.env.reset()
         episode_counter = 0
@@ -235,7 +251,9 @@ class PPO:
         while True:
             with torch.no_grad():
                 obs_buf.append(np.copy(obs))
-                act, _, _ = self.ac.step(torch.as_tensor(obs, dtype=torch.float32).to(self.params.device))
+                act, _, _ = self.ac.step(
+                    torch.as_tensor(obs, dtype=torch.float32).to(self.params.device)
+                )
                 obs, rew, done, misc = self.env.step(act)
                 rew_buf.append(np.copy(rew))
                 act_buf.append(np.copy(act))

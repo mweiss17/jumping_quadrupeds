@@ -11,6 +11,4 @@ log_wandb_every: 1
 use_wandb: "True"
 
 paths:
-  samples: "results/vae-samples/"
-  checkpoints: "results/vae-checkpoints/"
-  rollouts: "data/random-rollouts-50k.zip"
+  rollouts: "random-rollouts-50k.zip"

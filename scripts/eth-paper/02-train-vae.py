@@ -13,30 +13,33 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
     def __init__(self):
         super(TrainVAE, self).__init__()
         self.auto_setup()
-        WandBMixin.WANDB_PROJECT = "jumping_quadrupeds"
-        WandBMixin.WANDB_ENTITY = "mweiss10"
+        WandBMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBMixin.WANDB_PROJECT = "vae-tests"
+        WandBMixin.WANDB_GROUP = "vae-exploration"
+
         if self.get("use_wandb"):
             self.initialize_wandb()
-        # Check result paths
-        if not os.path.isdir(self.get("paths/samples")):
-            os.makedirs(self.get("paths/samples"))
-        if not os.path.isdir(self.get("paths/checkpoints")):
-            os.makedirs(self.get("paths/checkpoints"))
 
         self._build()
 
     def _build(self):
         # CUDA for PyTorch
-        use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda:1" if use_cuda else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         torch.backends.cudnn.benchmark = True
 
         # Generators
-        dataset = Dataset(self.get("paths/rollouts"), max_num_samples=self.get("max_num_samples", None))
+        dataset = Dataset(
+            self.get("paths/rollouts"),
+            max_num_samples=self.get("max_num_samples", None),
+        )
 
         split = dataset.data.shape[0] // 8
-        self.train = torch.utils.data.DataLoader(dataset[split:], **self.get("dataloader"))
-        self.valid = torch.utils.data.DataLoader(dataset[:split], **self.get("dataloader"))
+        self.train = torch.utils.data.DataLoader(
+            dataset[split:], **self.get("dataloader")
+        )
+        self.valid = torch.utils.data.DataLoader(
+            dataset[:split], **self.get("dataloader")
+        )
 
         self.model = ConvVAE(in_channels=3, latent_dim=32)
         self.model.to(self.device)
@@ -51,7 +54,9 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
             for batch in tqdm(self.train, desc="batches..."):
                 batch = batch.to(self.device)
                 x_hat, input, mu, log_var = self.model(batch)
-                loss = self.model.loss_function(x_hat, input, mu, log_var, M_N=self.get("dataloader/batch_size"))
+                loss = self.model.loss_function(
+                    x_hat, input, mu, log_var, M_N=self.get("dataloader/batch_size")
+                )
                 self.optimizer.zero_grad()
                 loss["loss"].backward()
                 self.optimizer.step()
@@ -74,16 +79,27 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
             generated_image = x_hat[sampleid].detach().cpu().moveaxis(0, 2).numpy()
             if self.get("use_wandb"):
                 self.wandb_log_image("true image", np.rollaxis(true_image, 2, 0))
-                self.wandb_log_image("generated image", np.rollaxis(generated_image, 2, 0))
+                self.wandb_log_image(
+                    "generated image", np.rollaxis(generated_image, 2, 0)
+                )
             else:
-                true_sample_path = os.path.join(self.get("paths/samples"), f"true-epoch{epoch}.jpg")
-                generated_sample_path = os.path.join(self.get("paths/samples"), f"generated-epoch{epoch}.jpg")
+                true_sample_path = os.path.join(
+                    self.experiment_directory,
+                    f"Logs/true-epoch{epoch}.jpg",
+                )
+                generated_sample_path = os.path.join(
+                    self.experiment_directory,
+                    f"Logs/generated-epoch{epoch}.jpg",
+                )
                 plt.imsave(true_sample_path, true_image)
                 plt.imsave(generated_sample_path, generated_image)
 
             # Checkpoint
             if epoch % self.get("checkpoint_every") == 0:
-                torch.save(self.model.state_dict(), open(f"results/vae-checkpoints/vae-{epoch}.pt", "wb"))
+                torch.save(
+                    self.model.state_dict(),
+                    open(f"{self.experiment_directory}/Weights/vae-{epoch}.pt", "wb"),
+                )
 
             # Run Validation
             if epoch % self.get("valid_every") == 0:
@@ -91,7 +107,9 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
                 for valbatch in tqdm(self.valid, "valid batches..."):
                     valbatch = valbatch.to(self.device)
                     x_hat, input, mu, log_var = self.model(valbatch)
-                    loss = self.model.loss_function(x_hat, input, mu, log_var, M_N=self.get("dataloader/batch_size"))
+                    loss = self.model.loss_function(
+                        x_hat, input, mu, log_var, M_N=self.get("dataloader/batch_size")
+                    )
                     if self.get("use_wandb"):
                         self.wandb_log(**{"valid_loss": loss})
                         self.wandb_log(**{"lr": self.scheduler.get_lr()})
