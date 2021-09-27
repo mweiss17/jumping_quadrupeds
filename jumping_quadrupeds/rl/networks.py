@@ -141,6 +141,16 @@ class AbstractActorCritic(nn.Module):
         # TODO
         pass
 
+    def get_policy_params(self):
+        """ return the parameters of all networks involved in the policy for the optimizer
+        """
+        pass
+
+    def get_value_params(self):
+        """ return the parameters of all networks involved in the value function for the optimizer
+        """
+        pass
+
 
 class MLPActorCritic(AbstractActorCritic):
     def __init__(self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh):
@@ -164,3 +174,65 @@ class MLPActorCritic(AbstractActorCritic):
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             v = self.v(obs)
         return a.numpy(), v.numpy(), logp_a.numpy()
+
+    def get_policy_params(self):
+        return self.pi.parameters()
+
+    def get_value_params(self):
+        return self.v.parameters()
+
+
+class MLPSharedActorCritic(AbstractActorCritic):
+    def __init__(self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh):
+        super().__init__()
+
+        obs_dim = observation_space.shape[0]
+
+        self.shared_encoder = mlp([obs_dim] + list(hidden_sizes), activation)
+
+        # policy builder depends on action space
+        if isinstance(action_space, Box):
+            self._pi = MLPGaussianActor(hidden_sizes[-1], action_space.shape[0], [], activation)
+        elif isinstance(action_space, Discrete):
+            self._pi = MLPCategoricalActor(hidden_sizes[-1], action_space.n, [], activation)
+
+        # build value function
+        self._v = MLPCritic(hidden_sizes[-1], [], activation)
+
+    def step(self, obs):
+        with torch.no_grad():
+            obs_encoded = self.shared_encoder(obs)
+
+            pi = self._pi._distribution(obs_encoded)
+            a = pi.sample()
+            logp_a = self._pi._log_prob_from_distribution(pi, a)
+            v = self._v(obs_encoded)
+        return a.numpy(), v.numpy(), logp_a.numpy()
+
+    def pi(self, obs, act=None):
+        obs_encoded = self.shared_encoder(obs)
+        pi = self._pi._distribution(obs_encoded)
+        logp_a = None
+        if act is not None:
+            logp_a = self._pi._log_prob_from_distribution(pi, act)
+        return pi, logp_a
+
+    def v(self, obs):
+        obs_encoded = self.shared_encoder(obs)
+        return torch.squeeze(self._v.v_net(obs_encoded), -1)
+
+    def get_policy_params(self):
+        return list(self._pi.parameters()) + list(self.shared_encoder.parameters())
+
+    def get_value_params(self):
+        return list(self._v.parameters()) + list(self.shared_encoder.parameters())
+
+    def train(self, mode: bool = True):
+        self._pi.train(mode)
+        self._v.train(mode)
+        self.shared_encoder.train(mode)
+
+    def eval(self):
+        self._pi.eval()
+        self._v.eval()
+        self.shared_encoder.eval()

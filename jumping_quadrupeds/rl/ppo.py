@@ -30,8 +30,8 @@ class PPO:
         # np.random.seed(params.seed)
 
         # Set up optimizers for policy and value function
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=params.pi_lr)
-        self.vf_optimizer = Adam(self.ac.v.parameters(), lr=params.vf_lr)
+        self.pi_optimizer = Adam(self.ac.get_policy_params(), lr=params.pi_lr)
+        self.vf_optimizer = Adam(self.ac.get_value_params(), lr=params.vf_lr)
 
         self.obs = None
         self.ep_rew_mean = deque(maxlen=params.rew_smooth_len)
@@ -81,7 +81,7 @@ class PPO:
         if self.params.verbose:
             tqdm.write("Training pi")
 
-        self.ac.pi.train()
+        self.ac.train()
 
         for i in range(self.params.train_pi_iters):
             self.pi_optimizer.zero_grad()
@@ -97,8 +97,6 @@ class PPO:
         # Value function learning
         if self.params.verbose:
             tqdm.write("Training Val")
-
-        self.ac.v.train()
 
         for i in range(self.params.train_v_iters):
             self.vf_optimizer.zero_grad()
@@ -168,8 +166,7 @@ class PPO:
         env_step_timers = []
         env_reset_timers = []
 
-        self.ac.pi.eval()
-        self.ac.v.eval()
+        self.ac.eval()
 
         for t in trange(self.params.steps_per_epoch):
             self.act, self.val, self.logp = self.ac.step(
