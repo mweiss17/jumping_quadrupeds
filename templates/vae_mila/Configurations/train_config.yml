@@ -1,0 +1,15 @@
+dataloader:
+  batch_size: 1024
+  shuffle: "True"
+  num_workers: 12
+
+num_epochs: 100
+checkpoint_every: 10
+valid_every: 10
+log_wandb_every: 1
+use_wandb: "True"
+
+paths:
+  samples: "results/vae-samples/"
+  checkpoints: "results/vae-checkpoints/"
+  rollouts: "~/scratch-new/random-rollouts-50k"
