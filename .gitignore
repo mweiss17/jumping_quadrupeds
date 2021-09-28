@@ -15,6 +15,7 @@ __pycache__/
 # PyTorch binaries
 *.pth
 *.pth.tar
+*.pt
 
 # Jupyter Notebook
 .ipynb_checkpoints

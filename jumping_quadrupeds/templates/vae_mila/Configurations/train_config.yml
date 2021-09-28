@@ -3,7 +3,6 @@ dataloader:
   shuffle: "True"
   num_workers: 12
 
-#max_num_samples: 1024 # uncomment if you want to limit the number of samples to load
 num_epochs: 100
 checkpoint_every: 10
 valid_every: 10
