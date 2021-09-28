@@ -11,4 +11,4 @@ log_wandb_every: 1
 use_wandb: "True"
 
 paths:
-  rollouts: "random-rollouts-50k.zip"
+  rollouts: "random-rollouts-50k"

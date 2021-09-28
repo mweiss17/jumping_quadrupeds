@@ -53,10 +53,6 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         torch.backends.cudnn.benchmark = True
 
-        use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda" if use_cuda else "cpu")
-        torch.backends.cudnn.benchmark = True
-
         # Dataset
         dataset_path = os.path.abspath(
             os.path.expanduser(os.path.expandvars(self.get("paths/rollouts")))
