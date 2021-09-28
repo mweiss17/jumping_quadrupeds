@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 
-from jumping_quadrupeds.rl.params import PpoParams
 from jumping_quadrupeds.rl.utils import combined_shape, discount_cumsum
 
 
@@ -12,10 +11,14 @@ class PpoBuffer:
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(self, obs_dim, act_dim, params: PpoParams):
+    def __init__(self, obs_dim, act_dim, params):
         self.params = params
-        self.obs_buf = np.zeros(combined_shape(params.steps_per_epoch, obs_dim), dtype=np.float32)
-        self.act_buf = np.zeros(combined_shape(params.steps_per_epoch, act_dim), dtype=np.float32)
+        self.obs_buf = np.zeros(
+            combined_shape(params.steps_per_epoch, obs_dim), dtype=np.float32
+        )
+        self.act_buf = np.zeros(
+            combined_shape(params.steps_per_epoch, act_dim), dtype=np.float32
+        )
         self.adv_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
         self.rew_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
         self.ret_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
@@ -27,7 +30,9 @@ class PpoBuffer:
         """
         Append one timestep of agent-environment interaction to the buffer.
         """
-        assert self.ptr < self.params.steps_per_epoch  # buffer has to have room so you can store
+        assert (
+            self.ptr < self.params.steps_per_epoch
+        )  # buffer has to have room so you can store
         self.obs_buf[self.ptr] = obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
@@ -57,7 +62,9 @@ class PpoBuffer:
 
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.params.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = discount_cumsum(deltas, self.params.gamma * self.params.lam)
+        self.adv_buf[path_slice] = discount_cumsum(
+            deltas, self.params.gamma * self.params.lam
+        )
 
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = discount_cumsum(rews, self.params.gamma)[:-1]
@@ -70,11 +77,22 @@ class PpoBuffer:
         the buffer, with advantages appropriately normalized (shifted to have
         mean zero and std one). Also, resets some pointers in the buffer.
         """
-        assert self.ptr == self.params.steps_per_epoch  # buffer has to be full before you can get
+        assert (
+            self.ptr == self.params.steps_per_epoch
+        )  # buffer has to be full before you can get
         if reset:
             self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = np.mean(self.adv_buf), np.std(self.adv_buf)
         adv_buf = (self.adv_buf - adv_mean) / adv_std
-        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf, adv=adv_buf, logp=self.logp_buf)
-        return {k: torch.as_tensor(v, dtype=torch.float32).to(self.params.device) for k, v in data.items()}
+        data = dict(
+            obs=self.obs_buf,
+            act=self.act_buf,
+            ret=self.ret_buf,
+            adv=adv_buf,
+            logp=self.logp_buf,
+        )
+        return {
+            k: torch.as_tensor(v, dtype=torch.float32).to(self.params.device)
+            for k, v in data.items()
+        }

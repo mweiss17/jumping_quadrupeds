@@ -7,7 +7,6 @@ from tqdm import tqdm, trange
 
 from jumping_quadrupeds.rl.buffer import PpoBuffer
 from jumping_quadrupeds.rl.networks import AbstractActorCritic
-from jumping_quadrupeds.rl.params import PpoParams
 
 
 class PPO:

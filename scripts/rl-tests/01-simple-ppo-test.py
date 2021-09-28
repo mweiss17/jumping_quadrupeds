@@ -19,14 +19,13 @@ class TrainPPO(BaseExperiment, WandBMixin, IOMixin):
         if self.get("use_wandb"):
             self.initialize_wandb()
 
-        self.ENV = self.get("ENV", "CartPole-v0")
-        self.SEED = self.get("SEED", 58235)
-        np.random.seed(self.SEED)
-        torch.random.manual_seed(self.SEED)
+        SEED = self.get("SEED", 58235)
+        np.random.seed(SEED)
+        torch.random.manual_seed(SEED)
 
         # env setup
-        self.env = gym.make(self.ENV)
-        self.env.seed(self.SEED)
+        self.env = gym.make(self.get("ENV", "CartPole-v0"))
+        self.env.seed(SEED)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
@@ -39,8 +38,7 @@ class TrainPPO(BaseExperiment, WandBMixin, IOMixin):
             self.env.observation_space.shape, self.env.action_space.shape, self
         )
 
-        ppo = PPO(self, self.env, self.ac, buf)
+        self.ppo = PPO(self, self.env, self.ac, buf)
 
-
-def run(self):
-    self.ppo.train_loop()
+    def run(self):
+        self.ppo.train_loop()
