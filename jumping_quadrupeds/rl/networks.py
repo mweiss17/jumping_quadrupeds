@@ -170,8 +170,6 @@ class MLPActorCritic(AbstractActorCritic):
 
         # build value function
         self.v = MLPCritic(obs_dim, hidden_sizes, activation)
-        self.pi = self.pi.to(self.params.device)
-        self.v = self.v.to(self.params.device)
 
     def step(self, obs):
         with torch.no_grad():
@@ -179,7 +177,7 @@ class MLPActorCritic(AbstractActorCritic):
             a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             v = self.v(obs)
-        return a.numpy(), v.numpy(), logp_a.numpy()
+        return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
 
     def get_policy_params(self):
         return self.pi.parameters()
@@ -219,7 +217,7 @@ class MLPSharedActorCritic(AbstractActorCritic):
             a = pi.sample()
             logp_a = self._pi._log_prob_from_distribution(pi, a)
             v = self._v(obs_encoded)
-        return a.numpy(), v.numpy(), logp_a.numpy()
+        return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
 
     def pi(self, obs, act=None):
         obs_encoded = self.shared_encoder(obs)

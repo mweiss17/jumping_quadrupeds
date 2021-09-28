@@ -11,19 +11,22 @@ class PpoBuffer:
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(self, obs_dim, act_dim, params):
-        self.params = params
+    def __init__(self, obs_dim, act_dim, steps_per_epoch, gamma, lam, device):
+        self.steps_per_epoch = steps_per_epoch
+        self.gamma = gamma
+        self.lam = lam
+        self.device = device
         self.obs_buf = np.zeros(
-            combined_shape(params.steps_per_epoch, obs_dim), dtype=np.float32
+            combined_shape(self.steps_per_epoch, obs_dim), dtype=np.float32
         )
         self.act_buf = np.zeros(
-            combined_shape(params.steps_per_epoch, act_dim), dtype=np.float32
+            combined_shape(self.steps_per_epoch, act_dim), dtype=np.float32
         )
-        self.adv_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
-        self.rew_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
-        self.ret_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
-        self.val_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
-        self.logp_buf = np.zeros(params.steps_per_epoch, dtype=np.float32)
+        self.adv_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
+        self.rew_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
+        self.ret_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
+        self.val_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
+        self.logp_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
         self.ptr, self.path_start_idx = 0, 0
 
     def store(self, obs, act, rew, val, logp):
@@ -31,7 +34,7 @@ class PpoBuffer:
         Append one timestep of agent-environment interaction to the buffer.
         """
         assert (
-            self.ptr < self.params.steps_per_epoch
+            self.ptr < self.steps_per_epoch
         )  # buffer has to have room so you can store
         self.obs_buf[self.ptr] = obs
         self.act_buf[self.ptr] = act
@@ -61,13 +64,11 @@ class PpoBuffer:
         vals = np.append(self.val_buf[path_slice], last_val)
 
         # the next two lines implement GAE-Lambda advantage calculation
-        deltas = rews[:-1] + self.params.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = discount_cumsum(
-            deltas, self.params.gamma * self.params.lam
-        )
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lam)
 
         # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = discount_cumsum(rews, self.params.gamma)[:-1]
+        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
 
         self.path_start_idx = self.ptr
 
@@ -78,7 +79,7 @@ class PpoBuffer:
         mean zero and std one). Also, resets some pointers in the buffer.
         """
         assert (
-            self.ptr == self.params.steps_per_epoch
+            self.ptr == self.steps_per_epoch
         )  # buffer has to be full before you can get
         if reset:
             self.ptr, self.path_start_idx = 0, 0
@@ -93,6 +94,6 @@ class PpoBuffer:
             logp=self.logp_buf,
         )
         return {
-            k: torch.as_tensor(v, dtype=torch.float32).to(self.params.device)
+            k: torch.as_tensor(v, dtype=torch.float32).to(self.device)
             for k, v in data.items()
         }

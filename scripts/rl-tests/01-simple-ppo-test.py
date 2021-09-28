@@ -1,10 +1,10 @@
 import gym
 import torch
 import numpy as np
-import wandb
+from speedrun import BaseExperiment, WandBMixin, IOMixin
+
 from jumping_quadrupeds.rl.buffer import PpoBuffer
 from jumping_quadrupeds.rl.networks import MLPActorCritic
-from jumping_quadrupeds.rl.params import PpoParams
 from jumping_quadrupeds.rl.ppo import PPO
 
 
@@ -24,21 +24,31 @@ class TrainPPO(BaseExperiment, WandBMixin, IOMixin):
         torch.random.manual_seed(SEED)
 
         # env setup
-        self.env = gym.make(self.get("ENV", "CartPole-v0"))
-        self.env.seed(SEED)
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        env = gym.make(self.get("ENV", "CartPole-v0"))
+        env.seed(SEED)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
-        self.ac = MLPActorCritic(self.env.observation_space, self.env.action_space)
-        wandb.watch(self.ac.pi)
-        wandb.watch(self.ac.v)
+        ac = MLPActorCritic(env.observation_space, env.action_space)
+        ac = ac.to(device)
+        if self.get("use_wandb"):
+            self.wandb_watch(ac.pi, log_freq=1)
+            self.wandb_watch(ac.v, log_freq=1)
 
         # buffer
         buf = PpoBuffer(
-            self.env.observation_space.shape, self.env.action_space.shape, self
+            env.observation_space.shape,
+            env.action_space.shape,
+            self.get("steps_per_epoch"),
+            self.get("gamma"),
+            self.get("lam"),
+            device,
         )
 
-        self.ppo = PPO(self, self.env, self.ac, buf)
+        self.ppo = PPO(self, env, ac, buf)
 
     def run(self):
         self.ppo.train_loop()
+
+
+TrainPPO().run()
