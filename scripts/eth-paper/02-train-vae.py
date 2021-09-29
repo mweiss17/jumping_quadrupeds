@@ -33,6 +33,7 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
             "train": transforms.Compose(
                 [
                     transforms.Resize(64),
+                    transforms.RandomHorizontalFlip(),
                     transforms.ToTensor(),
                 ]
             ),
@@ -68,11 +69,14 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
         self.train = torch.utils.data.DataLoader(self.train, **self.get("dataloader"))
         self.valid = torch.utils.data.DataLoader(self.valid, **self.get("dataloader"))
 
-        self.model = ConvVAE(in_channels=3, latent_dim=32)
+        self.model = ConvVAE(img_channels=3, latent_size=32)
         self.model.to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
-        self.scheduler = optim.lr_scheduler.ExponentialLR(
-            self.optimizer, gamma=self.get("scheduler_gamma")
+        # self.scheduler = optim.lr_scheduler.ExponentialLR(
+        #     self.optimizer, gamma=self.get("scheduler_gamma")
+        # )
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, "min", factor=0.5, patience=5
         )
 
     @register_default_dispatch
@@ -84,29 +88,21 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
 
             for imgs, rollout_envs in tqdm(self.train, desc="batches..."):
                 imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(self.device)
-                x_hat, input, mu, log_var = self.model(imgs)
-                loss = self.model.loss_function(
-                    x_hat,
-                    input,
-                    mu,
-                    log_var,
-                    M_N=self.get("dataloader/batch_size") / len(self.train),
-                )
+                x_hat, mu, log_var = self.model(imgs)
+                loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                 self.optimizer.zero_grad()
                 loss["loss"].backward()
                 self.optimizer.step()
                 self.next_step()
                 if self.get("use_wandb"):
                     self.wandb_log(**{"train_loss": loss})
-                    self.wandb_log(**{"lr": self.scheduler.get_lr()[0]})
+                    self.wandb_log(**{"lr": self.optimizer.param_groups[0]["lr"]})
 
             self.next_epoch()
 
             # log gradients once per epoch
             if self.get("use_wandb"):
                 self.wandb_watch(self.model, loss, log_freq=1)
-
-            self.scheduler.step()
 
             # Plot samples
             sampleid = np.random.choice(range(0, len(imgs)))
@@ -151,14 +147,13 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                     imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(
                         self.device
                     )
-                    x_hat, input, mu, log_var = self.model(imgs)
-                    loss = self.model.loss_function(
-                        x_hat, input, mu, log_var, M_N=self.get("dataloader/batch_size")
-                    )
+                    x_hat, mu, log_var = self.model(imgs)
+                    valid_loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                     if self.get("use_wandb"):
-                        self.wandb_log(**{"valid_loss": loss})
-                        self.wandb_log(**{"lr": self.scheduler.get_lr()})
+                        self.wandb_log(**{"valid_loss": valid_loss})
+                        self.wandb_log(**{"lr": self.optimizer.param_groups[0]["lr"]})
 
+                self.scheduler.step(valid_loss["loss"])
                 self.model.train()
 
 
