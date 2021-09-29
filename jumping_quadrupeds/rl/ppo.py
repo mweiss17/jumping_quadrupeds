@@ -141,21 +141,15 @@ class PPO:
     def save_checkpoint(self, epoch):
         torch.save(
             self.ac.state_dict(),
-            open(f"{self.exp.experiment_directory}/Weights/ac-{epoch}.pt", "wb"),
+            f"{self.exp.experiment_directory}/Weights/ac-{epoch}.pt",
         )
         torch.save(
             self.pi_optimizer.state_dict(),
-            open(
-                f"{self.exp.experiment_directory}/Weights/pi-optim-{epoch}.pt",
-                "wb",
-            ),
+            f"{self.exp.experiment_directory}/Weights/pi-optim-{epoch}.pt",
         )
         torch.save(
             self.vf_optimizer.state_dict(),
-            open(
-                f"{self.exp.experiment_directory}/Weights/vf-optim-{epoch}.pt",
-                "wb",
-            ),
+            f"{self.exp.experiment_directory}/Weights/vf-optim-{epoch}.pt",
         )
 
     def load_checkpoint(self):

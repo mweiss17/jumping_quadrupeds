@@ -10,5 +10,10 @@ valid_every: 10
 log_wandb_every: 1
 use_wandb: "True"
 
+# params
+lr: 0.005
+scheduler_gamma: 0.95
+
+
 paths:
   rollouts: "random-rollouts-50k"

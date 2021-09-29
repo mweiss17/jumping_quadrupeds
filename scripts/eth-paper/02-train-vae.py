@@ -34,14 +34,12 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 [
                     transforms.Resize(64),
                     transforms.ToTensor(),
-                    ClipAndRescale(-1.0, 1.0),
                 ]
             ),
             "valid": transforms.Compose(
                 [
                     transforms.Resize(64),
                     transforms.ToTensor(),
-                    ClipAndRescale(-1.0, 1.0),
                 ]
             ),
         }
@@ -61,7 +59,7 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
 
         # Split dataset into train and validation splits
         split_idx = len(dataset) // 8
-        self.train, self.valid = torch.utils.data.random_split(
+        self.valid, self.train = torch.utils.data.random_split(
             dataset, [split_idx, len(dataset) - split_idx]
         )
         self.train = MySubset(self.train, self.transform_dict["train"])
@@ -72,8 +70,10 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
 
         self.model = ConvVAE(in_channels=3, latent_dim=32)
         self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
+        self.scheduler = optim.lr_scheduler.ExponentialLR(
+            self.optimizer, gamma=self.get("scheduler_gamma")
+        )
 
     @register_default_dispatch
     def trainloop(self):
@@ -86,7 +86,11 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(self.device)
                 x_hat, input, mu, log_var = self.model(imgs)
                 loss = self.model.loss_function(
-                    x_hat, input, mu, log_var, M_N=self.get("dataloader/batch_size")
+                    x_hat,
+                    input,
+                    mu,
+                    log_var,
+                    M_N=self.get("dataloader/batch_size") / len(self.train),
                 )
                 self.optimizer.zero_grad()
                 loss["loss"].backward()
@@ -113,6 +117,13 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 self.wandb_log_image(
                     "generated image", np.rollaxis(generated_image, 2, 0)
                 )
+                self.wandb_log(
+                    **{
+                        "mu": mu[sampleid],
+                        "var": torch.exp(0.5 * log_var)[sampleid],
+                    }
+                )
+
             else:
                 true_sample_path = os.path.join(
                     self.experiment_directory,
