@@ -15,16 +15,16 @@ from jumping_quadrupeds.models.dataset import Box2dRollout, MySubset
 from jumping_quadrupeds.models.dataset import ClipAndRescale
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun
-from speedrun import BaseExperiment, WandBMixin, IOMixin
+from speedrun import BaseExperiment, WandBSweepMixin, IOMixin, register_default_dispatch
 
 
-class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
+class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
     def __init__(self):
         super(TrainVAE, self).__init__()
         self.auto_setup()
-        WandBMixin.WANDB_ENTITY = "jumping_quadrupeds"
-        WandBMixin.WANDB_PROJECT = "vae-tests"
-        WandBMixin.WANDB_GROUP = "vae-exploration"
+        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
+        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
 
         if self.get("use_wandb"):
             self.initialize_wandb()
@@ -75,7 +75,8 @@ class TrainVAE(BaseExperiment, WandBMixin, IOMixin):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
 
-    def run(self):
+    @register_default_dispatch
+    def trainloop(self):
         # train loop
         for epoch in tqdm(range(self.get("num_epochs")), desc="epochs..."):
 

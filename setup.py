@@ -16,6 +16,7 @@ setup(
         "attrs",
         "gym[box2d]",
         "pillow",
+        "wandb",
         "scipy",
         "matplotlib",
         "torchvision",
