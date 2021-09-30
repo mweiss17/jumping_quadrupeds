@@ -97,7 +97,6 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 if self.get("use_wandb"):
                     self.wandb_log(**{"train_loss": loss})
                     self.wandb_log(**{"lr": self.optimizer.param_groups[0]["lr"]})
-
             self.next_epoch()
 
             # log gradients once per epoch
@@ -109,10 +108,10 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
             true_image = imgs[sampleid].detach().cpu().moveaxis(0, 2).numpy()
             generated_image = x_hat[sampleid].detach().cpu().moveaxis(0, 2).numpy()
             if self.get("use_wandb"):
-                self.wandb_log_image("true image", np.rollaxis(true_image, 2, 0))
-                self.wandb_log_image(
-                    "generated image", np.rollaxis(generated_image, 2, 0)
-                )
+                img = np.zeros((3, 64, 64 * 2 + 2), dtype=np.float32);
+                img[:, :, :64] = np.rollaxis(true_image, 2, 0)
+                img[:, :, 66:] = np.rollaxis(generated_image, 2, 0)
+                self.wandb_log_image("L: true, R: generated",  img)
                 self.wandb_log(
                     **{
                         "mu": mu[sampleid],
