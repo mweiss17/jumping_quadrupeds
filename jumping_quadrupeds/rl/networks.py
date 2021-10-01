@@ -3,6 +3,7 @@ import torch
 from gym.spaces import Box, Discrete
 from torch import nn
 from torch.distributions import Categorical, Normal
+from torch.nn import functional as F
 
 from jumping_quadrupeds.rl.utils import mlp
 
@@ -67,6 +68,43 @@ class CNNCategoricalActor(Actor):
         return pi.log_prob(act)
 
 
+class CNNGaussianActor(Actor):
+    def __init__(self, channels, act_dim, hidden_sizes, activation=nn.ReLU):
+        super().__init__()
+        # [(W−K+2P)/S]+1
+        self.mu_net = nn.Sequential(
+            nn.Conv2d(channels, 32, kernel_size=8, stride=4, padding=0),
+            # [(64−8+0)/4]+1 = 15
+            activation(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
+            # [(15−4+0)/2]+1 = 6
+            activation(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
+            # [(6−3+0)]+1 = 4
+            activation(),
+            nn.Flatten(),
+            nn.Linear(64 * hidden_sizes, act_dim),
+            nn.Sigmoid(),
+        )
+        log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
+        self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
+
+    def _distribution(self, obs):
+        mu = self.mu_net(obs)
+        # re-scale mu[0] which is [-1, 1] turn angle
+        mu_rescaled = torch.ones_like(mu)
+        mu_rescaled[:, 0] = 2.0
+        mu_translate = torch.zeros_like(mu)
+        mu_translate[:, 0] = 1.0
+        mu = mu_rescaled * mu - mu_translate
+        std = torch.exp(self.log_std)
+
+        return Normal(mu, std)
+
+    def _log_prob_from_distribution(self, pi, act):
+        return pi.log_prob(act)
+
+
 class MLPGaussianActor(Actor):
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
@@ -98,22 +136,21 @@ class MLPCritic(nn.Module):
 
 
 class CNNCritic(nn.Module):
-    def __init__(self, obs_dim, hidden_sizes, activation=nn.ReLU):
+    def __init__(self, channels, hidden_sizes, activation=nn.ReLU):
         super().__init__()
         self.v_net = nn.Sequential(
-            nn.Conv2d(obs_dim, 32, kernel_size=8, stride=4, padding=0),
+            nn.Conv2d(channels, 32, kernel_size=8, stride=4, padding=0),
             activation(),
             nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
             activation(),
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
             activation(),
             nn.Flatten(),
-            nn.Linear(hidden_sizes * 64, 1),
+            nn.Linear(64 * hidden_sizes, 1),
         )
-        # self.v_net = mlp([obs_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs):
-        x = obs.float() / 255
+        x = obs.float() / 255.0
         if len(x.shape) == 3:
             x.unsqueeze_(0)
         return torch.squeeze(self.v_net(x), -1)  # Critical to ensure v has right shape.
@@ -178,6 +215,42 @@ class MLPActorCritic(AbstractActorCritic):
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             v = self.v(obs)
         return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
+
+    def get_policy_params(self):
+        return self.pi.parameters()
+
+    def get_value_params(self):
+        return self.v.parameters()
+
+
+class ConvActorCritic(AbstractActorCritic):
+    def __init__(
+        self, observation_space, action_space, hidden_sizes=16, activation=nn.Tanh
+    ):
+        super().__init__()
+
+        obs_dim = observation_space.shape[0]
+
+        # policy builder depends on action space
+        if isinstance(action_space, Box):
+            self.pi = CNNGaussianActor(
+                observation_space.shape[-1],
+                action_space.shape[0],
+                hidden_sizes,  # 4 * 4 square scaling factor for car-racing
+                activation,
+            )
+        elif isinstance(action_space, Discrete):
+            CNNCategoricalActor(obs_dim, action_space.n, hidden_sizes, activation)
+        # build value function
+        self.v = CNNCritic(observation_space.shape[-1], hidden_sizes, activation)
+
+    def step(self, obs):
+        with torch.no_grad():
+            pi = self.pi._distribution(obs)
+            a = pi.sample()
+            logp_a = self.pi._log_prob_from_distribution(pi, a)
+            v = self.v(obs)
+        return a.cpu().numpy()[0], v.cpu().numpy(), logp_a.cpu().numpy()
 
     def get_policy_params(self):
         return self.pi.parameters()

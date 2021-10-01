@@ -22,11 +22,15 @@ class PpoBuffer:
         self.act_buf = np.zeros(
             combined_shape(self.steps_per_epoch, act_dim), dtype=np.float32
         )
-        self.adv_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
+        self.adv_buf = np.zeros(
+            combined_shape(self.steps_per_epoch, 1), dtype=np.float32
+        )
         self.rew_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
         self.ret_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
         self.val_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
-        self.logp_buf = np.zeros(self.steps_per_epoch, dtype=np.float32)
+        self.logp_buf = np.zeros(
+            combined_shape(self.steps_per_epoch, act_dim), dtype=np.float32
+        )
         self.ptr, self.path_start_idx = 0, 0
 
     def store(self, obs, act, rew, val, logp):
@@ -65,7 +69,9 @@ class PpoBuffer:
 
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lam)
+        self.adv_buf[path_slice] = np.expand_dims(
+            discount_cumsum(deltas, self.gamma * self.lam), 1
+        )
 
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]

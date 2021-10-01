@@ -93,9 +93,9 @@ class PPO:
         data = self.buf.get()
 
         ## this is only used for debugging - compute the old loss of policy and value function
-        # pi_l_old, pi_info_old = self.compute_loss_pi(data)
-        # pi_l_old = pi_l_old.item()
-        # v_l_old = self.compute_loss_v(data).item()
+        pi_l_old, pi_info_old = self.compute_loss_pi(data)
+        pi_l_old = pi_l_old.item()
+        v_l_old = self.compute_loss_v(data).item()
 
         # Train policy with multiple steps of gradient descent
         if self._config.get("verbose"):
@@ -125,6 +125,33 @@ class PPO:
             loss_v = self.compute_loss_v(data)
             loss_v.backward()
             self.vf_optimizer.step()
+
+        if self.exp.get("use_wandb"):
+
+            sampleid = int(np.random.uniform(0, data["obs"].shape[0]))
+            self.exp.wandb_log_image("observation", data["obs"][sampleid])
+            self.exp.wandb_log(
+                **{
+                    "logp-turn": data["logp"][sampleid].detach().cpu().numpy()[0],
+                    "act-turn": data["act"][sampleid].detach().cpu().numpy()[0],
+                    "logp-gas": data["logp"][sampleid].detach().cpu().numpy()[1],
+                    "act-gas": data["act"][sampleid].detach().cpu().numpy()[1],
+                    "logp-brake": data["logp"][sampleid].detach().cpu().numpy()[2],
+                    "act-brake": data["act"][sampleid].detach().cpu().numpy()[2],
+                }
+            )
+
+            self.exp.wandb_log(
+                **{
+                    "LossPi": pi_l_old,
+                    "LossV": v_l_old,
+                    "KL": kl,
+                    "Entropy": np.mean(pi_info["ent"]),
+                    "ClipFrac": np.mean(pi_info["cf"]),
+                    "DeltaLossPi": (loss_pi.item() - pi_l_old),
+                    "DeltaLossV": (loss_v.item() - v_l_old),
+                }
+            )
 
         ## Log changes from update
         # kl, ent, cf = pi_info["kl"], pi_info_old["ent"], pi_info["cf"]
@@ -202,6 +229,7 @@ class PPO:
         """Fill up the replay buffer with fresh rollouts based on the current policy"""
 
         if self.obs is None:
+
             self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
         episode_counter = 0
 
@@ -212,16 +240,22 @@ class PPO:
         self.ac.eval()
 
         for t in trange(self._config.get("steps_per_epoch")):
-            self.act, self.val, self.logp = self.ac.step(
-                torch.as_tensor(self.obs, dtype=torch.float32).to(self.device)
-            )
+            obs = torch.as_tensor(self.obs.copy(), dtype=torch.float32).to(self.device)
+
+            self.act, self.val, self.logp = self.ac.step(obs)
             self.next_obs, self.rew, self.done, misc = self.env.step(self.act)
 
             self.total_steps += 1
             self.ep_ret += self.rew
             self.ep_len += 1
 
-            buf_objs = (self.obs, self.act, self.rew, self.val, self.logp)
+            buf_objs = (
+                self.obs,
+                self.act,
+                self.rew,
+                self.val,
+                self.logp,
+            )
             self.buf.store(*buf_objs)
 
             # logger.store(VVals=v)
