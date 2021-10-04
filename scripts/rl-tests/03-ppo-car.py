@@ -28,9 +28,9 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
             env_name=self.get("ENV", "CarRacing-v0"),
             seed=SEED,
             render_mode=False,
-            full_episode=False,
+            full_ep=False,
         )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
         ac = ConvActorCritic(env.observation_space, env.action_space)
@@ -52,8 +52,9 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
             self.get("gamma"),
             self.get("lam"),
             device,
+            self.get("save_transitions")
         )
-        self.ppo = PPO(self, env, ac, buf)
+        self.ppo = PPO(self, env, ac, buf, device=device)
 
     def run(self):
         self.ppo.train_loop()

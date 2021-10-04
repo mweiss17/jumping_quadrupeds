@@ -21,6 +21,7 @@ class PPO:
         env,
         actor_critic: AbstractActorCritic,
         buf: PpoBuffer,
+        device=None,
     ) -> None:
 
         self.exp = exp
@@ -28,7 +29,8 @@ class PPO:
         self.ac = actor_critic
         self.env = env
         self.buf = buf
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
         # Random seed
         # this should be done outside
@@ -51,6 +53,7 @@ class PPO:
         self.ep_rew_mean = deque(maxlen=self._config.get("rew_smooth_len"))
         self.ep_len_mean = deque(maxlen=self._config.get("rew_smooth_len"))
         self.total_steps = 0
+        self.total_episodes = 0
 
     def compute_loss_pi(self, data):
         """Computes policy loss"""
@@ -91,6 +94,7 @@ class PPO:
         """Updates the policy and value function based on the latest replay buffer"""
 
         data = self.buf.get()
+        self.buf.save(self.exp.experiment_directory)
 
         ## this is only used for debugging - compute the old loss of policy and value function
         pi_l_old, pi_info_old = self.compute_loss_pi(data)
@@ -138,11 +142,6 @@ class PPO:
                     "act-gas": data["act"][sampleid].detach().cpu().numpy()[1],
                     "logp-brake": data["logp"][sampleid].detach().cpu().numpy()[2],
                     "act-brake": data["act"][sampleid].detach().cpu().numpy()[2],
-                }
-            )
-
-            self.exp.wandb_log(
-                **{
                     "LossPi": pi_l_old,
                     "LossV": v_l_old,
                     "KL": kl,
@@ -208,6 +207,10 @@ class PPO:
                 tqdm.write("Updating PPO")
             self.update()
 
+            # Record video of the updated policy
+            self.env.send_wandb_video()
+            self.exp.next_epoch()
+
         # Log info about epoch
         # logger.log_tabular("Epoch", epoch)
         # logger.log_tabular("EpRet", with_min_and_max=True)
@@ -269,6 +272,7 @@ class PPO:
 
             if terminal or epoch_ended:
                 episode_counter += 1
+                self.total_episodes += 1
                 if epoch_ended and not terminal and self._config.get("verbose"):
                     tqdm.write(
                         f"Warning: trajectory cut off by epoch at {self.ep_len} steps."
@@ -291,6 +295,7 @@ class PPO:
                                 "Episode mean reward": np.mean(self.ep_rew_mean),
                                 "Env Steps": self.total_steps,
                                 "Episode mean length": np.mean(self.ep_len_mean),
+                                "Number of Episodes": self.total_episodes,
                             }
                         )
 
@@ -299,7 +304,6 @@ class PPO:
                     # only save EpRet / EpLen if trajectory finished
                     # logger.store(EpRet=ep_ret, EpLen=ep_len)
                     pass
-
                 self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
 
     def play(self, episodes=3):

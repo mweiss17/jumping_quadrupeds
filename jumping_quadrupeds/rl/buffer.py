@@ -1,6 +1,6 @@
-import numpy as np
+import os
 import torch
-
+import numpy as np
 from jumping_quadrupeds.rl.utils import combined_shape, discount_cumsum
 
 
@@ -11,8 +11,12 @@ class PpoBuffer:
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(self, obs_dim, act_dim, steps_per_epoch, gamma, lam, device):
+    def __init__(
+        self, obs_dim, act_dim, steps_per_epoch, gamma, lam, device, save_transitions
+    ):
         self.steps_per_epoch = steps_per_epoch
+        self.total_save_transitions = save_transitions
+        self.cur_transition_count = 0
         self.gamma = gamma
         self.lam = lam
         self.device = device
@@ -78,6 +82,16 @@ class PpoBuffer:
 
         self.path_start_idx = self.ptr
 
+    def _get(self):
+        data = dict(
+            obs=self.obs_buf,
+            act=self.act_buf,
+            ret=self.ret_buf,
+            adv=self.adv_buf,
+            logp=self.logp_buf,
+        )
+        return data
+
     def get(self, reset=True):
         """
         Call this at the end of an epoch to get all of the data from
@@ -91,15 +105,17 @@ class PpoBuffer:
             self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = np.mean(self.adv_buf), np.std(self.adv_buf)
-        adv_buf = (self.adv_buf - adv_mean) / adv_std
-        data = dict(
-            obs=self.obs_buf,
-            act=self.act_buf,
-            ret=self.ret_buf,
-            adv=adv_buf,
-            logp=self.logp_buf,
-        )
+        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
+        data = self._get()
         return {
             k: torch.as_tensor(v, dtype=torch.float32).to(self.device)
             for k, v in data.items()
         }
+
+    def save(self, path):
+        if self.cur_transition_count < self.total_save_transitions:
+            data = self._get()
+            np.save(
+                os.path.join(path, "Logs", f"buffer-{self.cur_transition_count}"), data
+            )
+            self.cur_transition_count += self.steps_per_epoch

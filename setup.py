@@ -20,6 +20,8 @@ setup(
         "scipy",
         "matplotlib",
         "torchvision",
+        "moviepy",
+        "imageio",
         "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@master#egg=speedrun",
     ],
 )
