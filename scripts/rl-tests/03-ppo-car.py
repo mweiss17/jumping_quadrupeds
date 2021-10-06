@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from speedrun import BaseExperiment, WandBMixin, IOMixin
 from jumping_quadrupeds.rl.buffer import PpoBuffer
-from jumping_quadrupeds.rl.networks import ConvActorCritic
+from jumping_quadrupeds.rl.networks import ConvActorCritic, ConvSharedActorCritic
 from jumping_quadrupeds.rl.ppo import PPO
 from jumping_quadrupeds.env import make_env
 
@@ -30,10 +30,23 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
             render_mode=False,
             full_ep=False,
         )
-        device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
-        ac = ConvActorCritic(env.observation_space, env.action_space)
+        if self.get("shared_encoder"):
+            ac = ConvSharedActorCritic(env.observation_space, env.action_space)
+        else:
+            ac = ConvActorCritic(env.observation_space, env.action_space)
+
+        if self.get("vae_enc_checkpoint"):
+            print(f"Loading saved encoder checkpoint to the state encoder")
+            ac.load_encoder(self.get("vae_enc_checkpoint"))
+
+        # do we want to freeze the encoder?
+        if self.get("freeze_encoder"):
+            ac.freeze_encoder()
+
+        # Put on device
         ac = ac.to(device)
 
         if self.get("use_wandb"):
@@ -52,7 +65,7 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
             self.get("gamma"),
             self.get("lam"),
             device,
-            self.get("save_transitions")
+            self.get("save_transitions"),
         )
         self.ppo = PPO(self, env, ac, buf, device=device)
 

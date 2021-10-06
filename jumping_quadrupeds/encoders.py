@@ -7,9 +7,10 @@ from torch import nn
 class ConvEncoder(nn.Module):  # pylint: disable=too-many-instance-attributes
     """World Models' encoder"""
 
-    def __init__(self, channels):
+    def __init__(self, channels, activation=nn.ReLU):
         super(ConvEncoder, self).__init__()
         self.img_channels = channels
+        self.activation = activation()
         self.conv1 = nn.Conv2d(channels, 32, 4, stride=2)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 128, 4, stride=2)
@@ -17,10 +18,10 @@ class ConvEncoder(nn.Module):  # pylint: disable=too-many-instance-attributes
         self.flatten = nn.Flatten()
 
     def forward(self, x):  # pylint: disable=arguments-differ
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
+        x = self.activation(self.conv1(x))
+        x = self.activation(self.conv2(x))
+        x = self.activation(self.conv3(x))
+        x = self.activation(self.conv4(x))
         x = self.flatten(x)
         return x
 
