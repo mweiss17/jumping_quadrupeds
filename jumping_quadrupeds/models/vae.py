@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
 from typing import List, Any, TypeVar
+from jumping_quadrupeds.encoders import ConvEncoder
 
 Tensor = TypeVar("torch.tensor")
 from torch import nn
@@ -58,33 +59,33 @@ class Decoder(nn.Module):
         return reconstruction
 
 
-class Encoder(nn.Module):  # pylint: disable=too-many-instance-attributes
-    """VAE encoder"""
-
-    def __init__(self, img_channels, latent_size):
-        super(Encoder, self).__init__()
-        self.latent_size = latent_size
-        self.img_channels = img_channels
-
-        self.conv1 = nn.Conv2d(img_channels, 32, 4, stride=2)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
-        self.conv3 = nn.Conv2d(64, 128, 4, stride=2)
-        self.conv4 = nn.Conv2d(128, 256, 4, stride=2)
-
-        self.fc_mu = nn.Linear(2 * 2 * 256, latent_size)
-        self.fc_logsigma = nn.Linear(2 * 2 * 256, latent_size)
-
-    def forward(self, x):  # pylint: disable=arguments-differ
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
-        x = x.view(x.size(0), -1)
-
-        mu = self.fc_mu(x)
-        logsigma = self.fc_logsigma(x)
-
-        return mu, logsigma
+# class Encoder(nn.Module):  # pylint: disable=too-many-instance-attributes
+#     """VAE encoder"""
+#
+#     def __init__(self, img_channels, latent_size):
+#         super(Encoder, self).__init__()
+#         self.latent_size = latent_size
+#         self.img_channels = img_channels
+#
+#         self.conv1 = nn.Conv2d(img_channels, 32, 4, stride=2)
+#         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+#         self.conv3 = nn.Conv2d(64, 128, 4, stride=2)
+#         self.conv4 = nn.Conv2d(128, 256, 4, stride=2)
+#
+#         self.fc_mu = nn.Linear(2 * 2 * 256, latent_size)
+#         self.fc_logsigma = nn.Linear(2 * 2 * 256, latent_size)
+#
+#     def forward(self, x):  # pylint: disable=arguments-differ
+#         x = F.relu(self.conv1(x))
+#         x = F.relu(self.conv2(x))
+#         x = F.relu(self.conv3(x))
+#         x = F.relu(self.conv4(x))
+#         x = x.view(x.size(0), -1)
+#
+#         mu = self.fc_mu(x)
+#         logsigma = self.fc_logsigma(x)
+#
+#         return mu, logsigma
 
 
 class ConvVAE(nn.Module):
@@ -92,7 +93,9 @@ class ConvVAE(nn.Module):
 
     def __init__(self, img_channels, latent_size):
         super(ConvVAE, self).__init__()
-        self.encoder = Encoder(img_channels, latent_size)
+        self.encoder = ConvEncoder(img_channels)
+        self.fc_mu = nn.Linear(2 * 2 * 256, latent_size)
+        self.fc_logsigma = nn.Linear(2 * 2 * 256, latent_size)
         self.decoder = Decoder(img_channels, latent_size)
 
     # Reconstruction + KL divergence losses summed over all elements and batch
@@ -108,7 +111,12 @@ class ConvVAE(nn.Module):
         return {"BCE": BCE, "KLD": KLD, "loss": BCE + KLD}
 
     def forward(self, x):  # pylint: disable=arguments-differ
-        mu, logsigma = self.encoder(x)
+        x = self.encoder(x)
+
+        # project to Gaussian latent space
+        mu = self.fc_mu(x)
+        logsigma = self.fc_logsigma(x)
+
         sigma = logsigma.exp()
         eps = torch.randn_like(sigma)
         z = eps.mul(sigma).add_(mu)

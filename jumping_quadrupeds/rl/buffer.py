@@ -12,7 +12,7 @@ class PpoBuffer:
     """
 
     def __init__(
-        self, obs_dim, act_dim, steps_per_epoch, gamma, lam, device, save_transitions
+        self, obs_dim, act_dim, steps_per_epoch, gamma, lam, device, save_transitions=0
     ):
         self.steps_per_epoch = steps_per_epoch
         self.total_save_transitions = save_transitions

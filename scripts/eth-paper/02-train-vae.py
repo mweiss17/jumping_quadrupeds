@@ -45,13 +45,13 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
             ),
         }
 
-        self._build()
-
-    def _build(self):
         # CUDA for PyTorch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         torch.backends.cudnn.benchmark = True
 
+        self._build()
+
+    def _build(self):
         # Dataset
         dataset_path = os.path.abspath(
             os.path.expanduser(os.path.expandvars(self.get("paths/rollouts")))
@@ -72,9 +72,6 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
         self.model = ConvVAE(img_channels=3, latent_size=32)
         self.model.to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
-        # self.scheduler = optim.lr_scheduler.ExponentialLR(
-        #     self.optimizer, gamma=self.get("scheduler_gamma")
-        # )
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, "min", factor=0.5, patience=5
         )
@@ -136,6 +133,10 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 torch.save(
                     self.model.state_dict(),
                     open(f"{self.experiment_directory}/Weights/vae-{epoch}.pt", "wb"),
+                )
+                torch.save(
+                    self.model.encoder.state_dict(),
+                    open(f"{self.experiment_directory}/Weights/enc-{epoch}.pt", "wb"),
                 )
 
             # Run Validation

@@ -3,13 +3,14 @@ import torch
 import numpy as np
 from speedrun import BaseExperiment, WandBMixin, IOMixin
 from jumping_quadrupeds.rl.buffer import PpoBuffer
-from jumping_quadrupeds.rl.networks import MLPSharedActorCritic
+from jumping_quadrupeds.rl.networks import ConvActorCritic
 from jumping_quadrupeds.rl.ppo import PPO
+from jumping_quadrupeds.env import make_env
 
 
-class TrainPPOwVAE(BaseExperiment, WandBMixin, IOMixin):
+class TrainPPOVAE(BaseExperiment, WandBMixin, IOMixin):
     def __init__(self):
-        super(TrainPPO, self).__init__()
+        super(TrainPPOVAE, self).__init__()
         self.auto_setup()
         WandBMixin.WANDB_ENTITY = "jumping_quadrupeds"
         WandBMixin.WANDB_PROJECT = "rl-tests"
@@ -23,32 +24,48 @@ class TrainPPOwVAE(BaseExperiment, WandBMixin, IOMixin):
         torch.random.manual_seed(SEED)
 
         # env setup
-        env = gym.make(self.get("ENV", "CartPole-v0"))
-        env.seed(SEED)
+        env = make_env(
+            env_name=self.get("ENV", "CarRacing-v0"),
+            seed=SEED,
+            render_mode=False,
+            full_ep=False,
+        )
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
-        ac = MLPSharedActorCritic(env.observation_space, env.action_space)
+        ac = ConvActorCritic(env.observation_space, env.action_space)
+
+        # Load the state encoder
+        ac.pi.encoder.load_state_dict(torch.load(self.get("vae_enc_checkpoint")))
+
+        # Load the state encoder
+        ac.v.encoder.load_state_dict(torch.load(self.get("vae_enc_checkpoint")))
+
+        # Put on device
         ac = ac.to(device)
 
         if self.get("use_wandb"):
-            self.wandb_watch(ac._pi, log_freq=1)
-            self.wandb_watch(ac._v, log_freq=1)
-            self.wandb_watch(ac.shared_encoder, log_freq=1)
+            self.wandb_watch(ac.pi, log_freq=1)
+            self.wandb_watch(ac.v, log_freq=1)
+            # self.wandb_watch(ac.shared_encoder, log_freq=1)
 
         # buffer
         buf = PpoBuffer(
-            env.observation_space.shape,
+            (
+                env.observation_space.shape[2],
+                env.observation_space.shape[1],
+                env.observation_space.shape[0],
+            ),
             env.action_space.shape,
             self.get("steps_per_epoch"),
             self.get("gamma"),
             self.get("lam"),
             device,
         )
-        self.ppo = PPO(self, env, ac, buf)
+        self.ppo = PPO(self, env, ac, buf, device=device)
 
     def run(self):
         self.ppo.train_loop()
 
 
-TrainPPO().run()
+TrainPPOVAE().run()

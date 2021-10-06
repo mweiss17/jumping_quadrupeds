@@ -29,8 +29,11 @@ class PPO:
         self.ac = actor_critic
         self.env = env
         self.buf = buf
-        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        self.device = (
+            device
+            if device
+            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
 
         # Random seed
         # this should be done outside
@@ -46,7 +49,7 @@ class PPO:
         )
 
         # Load checkpoints
-        if self._config.get("weight_checkpoint"):
+        if self._config.get("ppo_checkpoint"):
             self.load_checkpoint()
 
         self.obs = None

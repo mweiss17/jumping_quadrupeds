@@ -63,6 +63,7 @@ use_wandb: True
 save_transitions: 500000
 
 # in case you want to start from  a checkpoint, set these variables (or pass them through command line)
-# ppo_checkpoint: experiments/ppo/Weights/ac-40.pt
-# pi_optim_checkpoint: experiments/ppo/Weights/pi-optim-40.pt
-# vf_optim_checkpoint: experiments/ppo/Weights/vf-optim-40.pt
+#ppo_checkpoint: experiments/ppo/Weights/ac-40.pt
+#pi_optim_checkpoint: experiments/ppo/Weights/pi-optim-40.pt
+#vf_optim_checkpoint: experiments/ppo/Weights/vf-optim-40.pt
+vae_enc_checkpoint: experiments/train-vae-enc/Weights/enc-10.pt

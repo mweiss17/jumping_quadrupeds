@@ -4,7 +4,7 @@ from gym.spaces import Box, Discrete
 from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.nn import functional as F
-
+from jumping_quadrupeds.encoders import ConvEncoder2, ConvEncoder
 from jumping_quadrupeds.rl.utils import mlp
 
 
@@ -24,19 +24,6 @@ class Actor(nn.Module):
         if act is not None:
             logp_a = self._log_prob_from_distribution(pi, act)
         return pi, logp_a
-
-
-class MLPCategoricalActor(Actor):
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
-        super().__init__()
-        self.logits_net = mlp([obs_dim] + list(hidden_sizes) + [act_dim], activation)
-
-    def _distribution(self, obs):
-        logits = self.logits_net(obs)
-        return Categorical(logits=logits)
-
-    def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act)
 
 
 class CNNCategoricalActor(Actor):
@@ -72,25 +59,17 @@ class CNNGaussianActor(Actor):
     def __init__(self, channels, act_dim, hidden_sizes, activation=nn.ReLU):
         super().__init__()
         # [(W−K+2P)/S]+1
-        self.mu_net = nn.Sequential(
-            nn.Conv2d(channels, 32, kernel_size=8, stride=4, padding=0),
-            # [(64−8+0)/4]+1 = 15
-            activation(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
-            # [(15−4+0)/2]+1 = 6
-            activation(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
-            # [(6−3+0)]+1 = 4
-            activation(),
-            nn.Flatten(),
-            nn.Linear(64 * hidden_sizes, act_dim),
-            nn.Sigmoid(),
-        )
+        self.encoder = ConvEncoder(channels)
+        self.sigmoid = nn.Sigmoid()
+        self.linear = nn.Linear(64 * hidden_sizes, act_dim)
         log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
 
     def _distribution(self, obs):
-        mu = self.mu_net(obs)
+        if len(obs.shape) == 3:
+            obs.unsqueeze_(0)
+        preactivations = self.encoder(obs)
+        mu = self.linear(self.sigmoid(preactivations))
         # re-scale mu[0] which is [-1, 1] turn angle
         mu_rescaled = torch.ones_like(mu)
         mu_rescaled[:, 0] = 2.0
@@ -105,55 +84,19 @@ class CNNGaussianActor(Actor):
         return pi.log_prob(act)
 
 
-class MLPGaussianActor(Actor):
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
-        super().__init__()
-        log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
-        self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
-        self.mu_net = mlp([obs_dim] + list(hidden_sizes) + [act_dim], activation)
-
-    def _distribution(self, obs):
-        mu = self.mu_net(obs)
-        std = torch.exp(self.log_std)
-        return Normal(mu, std)
-
-    def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act).sum(
-            axis=-1
-        )  # Last axis sum needed for Torch Normal distribution
-
-
-class MLPCritic(nn.Module):
-    def __init__(self, obs_dim, hidden_sizes, activation):
-        super().__init__()
-        self.v_net = mlp([obs_dim] + list(hidden_sizes) + [1], activation)
-
-    def forward(self, obs):
-        # print("critic", obs.shape) # [minibatch, rp (5*128)]
-        return torch.squeeze(
-            self.v_net(obs), -1
-        )  # Critical to ensure v has right shape.
-
-
 class CNNCritic(nn.Module):
     def __init__(self, channels, hidden_sizes, activation=nn.ReLU):
         super().__init__()
-        self.v_net = nn.Sequential(
-            nn.Conv2d(channels, 32, kernel_size=8, stride=4, padding=0),
-            activation(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
-            activation(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
-            activation(),
-            nn.Flatten(),
-            nn.Linear(64 * hidden_sizes, 1),
-        )
+        self.encoder = ConvEncoder(channels)
+        self.linear = nn.Linear(64 * hidden_sizes, 1)
 
     def forward(self, obs):
         x = obs.float() / 255.0
         if len(x.shape) == 3:
             x.unsqueeze_(0)
-        return torch.squeeze(self.v_net(x), -1)  # Critical to ensure v has right shape.
+        return torch.squeeze(
+            self.linear(self.encoder(x)), -1
+        )  # Critical to ensure v has right shape.
 
 
 class AbstractActorCritic(nn.Module):
@@ -187,42 +130,6 @@ class AbstractActorCritic(nn.Module):
         pass
 
 
-class MLPActorCritic(AbstractActorCritic):
-    def __init__(
-        self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh
-    ):
-        super().__init__()
-
-        obs_dim = observation_space.shape[0]
-
-        # policy builder depends on action space
-        if isinstance(action_space, Box):
-            self.pi = MLPGaussianActor(
-                obs_dim, action_space.shape[0], hidden_sizes, activation
-            )
-        elif isinstance(action_space, Discrete):
-            self.pi = MLPCategoricalActor(
-                obs_dim, action_space.n, hidden_sizes, activation
-            )
-
-        # build value function
-        self.v = MLPCritic(obs_dim, hidden_sizes, activation)
-
-    def step(self, obs):
-        with torch.no_grad():
-            pi = self.pi._distribution(obs)
-            a = pi.sample()
-            logp_a = self.pi._log_prob_from_distribution(pi, a)
-            v = self.v(obs)
-        return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
-
-    def get_policy_params(self):
-        return self.pi.parameters()
-
-    def get_value_params(self):
-        return self.v.parameters()
-
-
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
         self, observation_space, action_space, hidden_sizes=16, activation=nn.Tanh
@@ -240,7 +147,9 @@ class ConvActorCritic(AbstractActorCritic):
                 activation,
             )
         elif isinstance(action_space, Discrete):
-            CNNCategoricalActor(obs_dim, action_space.n, hidden_sizes, activation)
+            self.pi = CNNCategoricalActor(
+                obs_dim, action_space.n, hidden_sizes, activation
+            )
         # build value function
         self.v = CNNCritic(observation_space.shape[-1], hidden_sizes, activation)
 
