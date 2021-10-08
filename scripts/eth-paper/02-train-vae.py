@@ -25,16 +25,14 @@ from speedrun import (
 # FAIR's SLURM-based automated task launcher
 import submitit
 
-class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkpointable):
+
+class TrainVAE(
+    BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkpointable
+):
     def __init__(self):
         super(TrainVAE, self).__init__()
-        self.auto_setup()
-        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
-        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
-        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
 
-        if self.get("use_wandb"):
-            self.initialize_wandb()
+        self.auto_setup()
 
         self.transform_dict = {
             "train": transforms.Compose(
@@ -52,13 +50,6 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkp
             ),
         }
 
-        # CUDA for PyTorch
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        torch.backends.cudnn.benchmark = True
-
-        self._build()
-
-    def _build(self):
         # Dataset
         dataset_path = os.path.abspath(
             os.path.expanduser(os.path.expandvars(self.get("paths/rollouts")))
@@ -77,7 +68,6 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkp
         self.valid = torch.utils.data.DataLoader(self.valid, **self.get("dataloader"))
 
         self.model = ConvVAE(img_channels=3, latent_size=32)
-        self.model.to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, "min", factor=0.5, patience=5
@@ -85,6 +75,17 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkp
 
     @register_default_dispatch
     def trainloop(self):
+        # CUDA for PyTorch
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+
+        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
+        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
+
+        if self.get("use_wandb"):
+            self.initialize_wandb()
+
         for epoch in tqdm(range(self.get("num_epochs")), desc="epochs..."):
             # Train the model
             for imgs, rollout_envs in tqdm(self.train, desc="batches..."):
@@ -177,24 +178,38 @@ class SweepVAE(SweepRunner, WandBSweepMixin, IOMixin):
 
 
 if __name__ == "__main__":
-    if "--wandb.sweep" in sys.argv:
-        SweepVAE().run()
-    else:
-        TrainVAE().run()
-
-    # ex = submitit.AutoExecutor(folder)
-    # if ex.cluster == "slurm":
-    #     print("Executor will schedule jobs on Slurm.")
+    # if "--wandb.sweep" in sys.argv:
+    #     SweepVAE().run()
     # else:
-    #     print(f"!!! Slurm executable `srun` not found. Will execute jobs on '{ex.cluster}'")
+    #     TrainVAE().run()
+    ex = submitit.AutoExecutor(".")
+    if ex.cluster == "slurm":
+        ex.update_parameters(
+            mem_gb=4,
+            cpus_per_task=4,
+            timeout_min=5,
+            tasks_per_node=1,
+            nodes=1,
+            slurm_partition="unkillable",
+            gres="gpu:rtx8000:1",
+        )
+    elif ex.cluster == "local":
+        trainer = TrainVAE()
+        ex.update_parameters(timeout_min=1000)
 
-    # model_path = folder / "model.pkl"
-    # trainer = MnistTrainer(LogisticRegression(penalty="l1", solver="saga", tol=0.1, multi_class="auto"))
+        job = ex.submit(trainer)
+        print(job.stdout())
+        print(job.stderr())
+        print(
+            f"!!! Slurm executable `srun` not found. Will execute jobs on '{ex.cluster}'"
+        )
+    else:
+        raise (":(")
 
-    # # Specify the job requirements.
-    # # Reserving only as much resource as you need ensure the cluster resource are
-    # # efficiently allocated.
-    # ex.update_parameters(mem_gb=4, cpus_per_task=4, timeout_min=5, tasks_per_node=1, nodes=1, slurm_partition="unkillable", gres="gpu:rtx8000:1")
-    # job = ex.submit(trainer, 5000, model_path=model_path)
-
-    # print(f"Scheduled {job}.")
+    # TODO: implement sweep https://github.com/facebookincubator/submitit/blob/main/docs/examples.md#job-arrays
+    # sweep = SweepVAE()
+    # executor = submitit.AutoExecutor(folder=log_folder)
+    # # the following line tells the scheduler to only run\
+    # # at most 2 jobs at once. By default, this is several hundreds
+    # executor.update_parameters(slurm_array_parallelism=2)
+    # jobs = executor.map_array(sweep)  # just a list of jobs
