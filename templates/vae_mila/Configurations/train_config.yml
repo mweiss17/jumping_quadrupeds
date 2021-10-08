@@ -3,13 +3,16 @@ dataloader:
   shuffle: "True"
   num_workers: 12
 
+#max_num_samples: 1024 # uncomment if you want to limit the number of samples to load
 num_epochs: 100
 checkpoint_every: 10
 valid_every: 10
 log_wandb_every: 1
 use_wandb: "True"
 
+# params
+lr: 0.001
+scheduler_gamma: 0.95
+
 paths:
-  samples: "results/vae-samples/"
-  checkpoints: "results/vae-checkpoints/"
   rollouts: "~/scratch-new/random-rollouts-50k"

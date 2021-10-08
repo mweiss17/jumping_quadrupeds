@@ -12,7 +12,6 @@ sys.path.append(os.getcwd())
 
 from jumping_quadrupeds.models.vae import ConvVAE
 from jumping_quadrupeds.models.dataset import Box2dRollout, MySubset
-from jumping_quadrupeds.models.dataset import ClipAndRescale
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun
 from speedrun import (
@@ -23,8 +22,10 @@ from speedrun import (
     register_default_dispatch,
 )
 
+# FAIR's SLURM-based automated task launcher
+import submitit
 
-class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
+class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkpointable):
     def __init__(self):
         super(TrainVAE, self).__init__()
         self.auto_setup()
@@ -84,11 +85,8 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
 
     @register_default_dispatch
     def trainloop(self):
-        # train loop
         for epoch in tqdm(range(self.get("num_epochs")), desc="epochs..."):
-
             # Train the model
-
             for imgs, rollout_envs in tqdm(self.train, desc="batches..."):
                 imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(self.device)
                 x_hat, mu, log_var = self.model(imgs)
@@ -165,6 +163,9 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
 
                 self.model.train()
 
+    def __call__(self):
+        return self.trainloop()
+
 
 class SweepVAE(SweepRunner, WandBSweepMixin, IOMixin):
     def __init__(self):
@@ -180,3 +181,20 @@ if __name__ == "__main__":
         SweepVAE().run()
     else:
         TrainVAE().run()
+
+    # ex = submitit.AutoExecutor(folder)
+    # if ex.cluster == "slurm":
+    #     print("Executor will schedule jobs on Slurm.")
+    # else:
+    #     print(f"!!! Slurm executable `srun` not found. Will execute jobs on '{ex.cluster}'")
+
+    # model_path = folder / "model.pkl"
+    # trainer = MnistTrainer(LogisticRegression(penalty="l1", solver="saga", tol=0.1, multi_class="auto"))
+
+    # # Specify the job requirements.
+    # # Reserving only as much resource as you need ensure the cluster resource are
+    # # efficiently allocated.
+    # ex.update_parameters(mem_gb=4, cpus_per_task=4, timeout_min=5, tasks_per_node=1, nodes=1, slurm_partition="unkillable", gres="gpu:rtx8000:1")
+    # job = ex.submit(trainer, 5000, model_path=model_path)
+
+    # print(f"Scheduled {job}.")
