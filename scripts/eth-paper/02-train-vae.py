@@ -15,7 +15,13 @@ from jumping_quadrupeds.models.dataset import Box2dRollout, MySubset
 from jumping_quadrupeds.models.dataset import ClipAndRescale
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun
-from speedrun import BaseExperiment, WandBSweepMixin, IOMixin, register_default_dispatch
+from speedrun import (
+    BaseExperiment,
+    WandBSweepMixin,
+    IOMixin,
+    SweepRunner,
+    register_default_dispatch,
+)
 
 
 class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
@@ -89,11 +95,15 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                 self.optimizer.zero_grad()
                 loss["loss"].backward()
-                self.optimizer.step()
+                self.scheduler.step(loss["loss"])
                 self.next_step()
                 if self.get("use_wandb"):
-                    self.wandb_log(**{"train_loss": loss})
-                    self.wandb_log(**{"lr": self.optimizer.param_groups[0]["lr"]})
+                    self.wandb_log(
+                        **{
+                            "train_loss": loss,
+                            "lr": self.optimizer.param_groups[0]["lr"],
+                        }
+                    )
             self.next_epoch()
 
             # log gradients once per epoch
@@ -153,9 +163,20 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                         self.wandb_log(**{"valid_loss": valid_loss})
                         self.wandb_log(**{"lr": self.optimizer.param_groups[0]["lr"]})
 
-                self.scheduler.step(valid_loss["loss"])
                 self.model.train()
 
 
+class SweepVAE(SweepRunner, WandBSweepMixin, IOMixin):
+    def __init__(self):
+        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
+        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
+
+        super(SweepVAE, self).__init__(TrainVAE)
+
+
 if __name__ == "__main__":
-    TrainVAE().run()
+    if "--wandb.sweep" in sys.argv:
+        SweepVAE().run()
+    else:
+        TrainVAE().run()
