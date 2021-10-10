@@ -1,11 +1,13 @@
-import torch
 import os
 import sys
+import time
+import torch
 from tqdm import tqdm
 import numpy as np
 from torch import optim
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
+from pathlib import Path
 
 # to add jumping_quadrupeds to python path
 sys.path.append(os.getcwd())
@@ -31,7 +33,6 @@ class TrainVAE(
 ):
     def __init__(self):
         super(TrainVAE, self).__init__()
-
         self.auto_setup()
 
         self.transform_dict = {
@@ -74,7 +75,11 @@ class TrainVAE(
         )
 
     @register_default_dispatch
-    def trainloop(self):
+    def __call__(self):
+        # if checkpoint_path and Path(checkpoint_path).exists():
+        #     print("in checkpoint")
+        #     self.model = self.model.load_state_dict(torch.load(checkpoint_path))
+
         # CUDA for PyTorch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
@@ -163,9 +168,7 @@ class TrainVAE(
                         self.wandb_log(**{"lr": self.optimizer.param_groups[0]["lr"]})
 
                 self.model.train()
-
-    def __call__(self):
-        return self.trainloop()
+        return valid_loss
 
 
 class SweepVAE(SweepRunner, WandBSweepMixin, IOMixin):
@@ -173,38 +176,52 @@ class SweepVAE(SweepRunner, WandBSweepMixin, IOMixin):
         WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
         WandBSweepMixin.WANDB_PROJECT = "vae-tests"
         WandBSweepMixin.WANDB_GROUP = "vae-exploration"
-
         super(SweepVAE, self).__init__(TrainVAE)
+
+    @register_default_dispatch
+    def __call__(self):
+        print(self)
+        print(self.__dict__)
+        self.auto_setup()
+        self.read_sweep_info()
+        print(self.update_configuration_from_wandb())
+        print(self)
+        print(self.__dict__)
+
+        self.run()
 
 
 if __name__ == "__main__":
-    # if "--wandb.sweep" in sys.argv:
-    #     SweepVAE().run()
-    # else:
-    #     TrainVAE().run()
-    ex = submitit.AutoExecutor(".")
+    folder = os.path.join(sys.argv[1], "Configurations", "Logs")
+    ex = submitit.AutoExecutor(folder=folder)
+
+    # setup the executor parameters based on the cluster location
     if ex.cluster == "slurm":
         ex.update_parameters(
-            mem_gb=4,
-            cpus_per_task=4,
-            timeout_min=5,
+            mem_gb=16,
+            cpus_per_task=12,
+            timeout_min=1000,
             tasks_per_node=1,
             nodes=1,
-            slurm_partition="unkillable",
+            slurm_partition="main",
             gres="gpu:rtx8000:1",
         )
     elif ex.cluster == "local":
-        trainer = TrainVAE()
         ex.update_parameters(timeout_min=1000)
-
-        job = ex.submit(trainer)
-        print(job.stdout())
-        print(job.stderr())
-        print(
-            f"!!! Slurm executable `srun` not found. Will execute jobs on '{ex.cluster}'"
-        )
     else:
-        raise (":(")
+        raise ("Where the hell am I?")
+
+    if "--wandb.sweep" in sys.argv:
+        assert "--njobs" in sys.argv
+        njobs = int(sys.argv[sys.argv.index("--njobs") + 1])
+        exp_path_root = sys.argv[1]
+        for i in range(njobs):
+            sys.argv[1] = os.path.join(exp_path_root, f"{i}")
+            print(sys.argv[1])
+            func = SweepVAE()
+    else:
+        func = TrainVAE()
+    job = ex.submit(func)
 
     # TODO: implement sweep https://github.com/facebookincubator/submitit/blob/main/docs/examples.md#job-arrays
     # sweep = SweepVAE()
