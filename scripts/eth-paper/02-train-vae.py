@@ -87,6 +87,9 @@ class TrainVAE(
         # if checkpoint_path and Path(checkpoint_path).exists():
         #     print("in checkpoint")
         #     self.model = self.model.load_state_dict(torch.load(checkpoint_path))
+        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
+        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
 
         # CUDA for PyTorch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -222,8 +225,8 @@ if __name__ == "__main__":
             sys.argv[1] = os.path.join(exp_path_root, f"{i}")
             func = SweepVAE()
             job_array.append(func)
-        executor.update_parameters(slurm_array_parallelism=2)
-        jobs = executor.map_array(job_array)  # just a list of jobs
+        ex.update_parameters(slurm_array_parallelism=2)
+        jobs = ex.map_array(job_array)  # just a list of jobs
 
     else:
         func = TrainVAE()
