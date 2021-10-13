@@ -31,8 +31,16 @@ import submitit
 class TrainVAE(
     BaseExperiment, WandBSweepMixin, IOMixin, submitit.helpers.Checkpointable
 ):
-    def __init__(self):
+    def __init__(self, args=None, kwargs=None):
         super(TrainVAE, self).__init__()
+        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
+        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
+
+        # this is necessary for running sweeps
+        if kwargs:
+            sys.argv = kwargs
+
         self.auto_setup()
 
         self.transform_dict = {
@@ -83,10 +91,6 @@ class TrainVAE(
         # CUDA for PyTorch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
-
-        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
-        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
-        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
 
         if self.get("use_wandb"):
             self.initialize_wandb()
@@ -173,20 +177,18 @@ class TrainVAE(
 
 class SweepVAE(SweepRunner, WandBSweepMixin, IOMixin):
     def __init__(self):
-        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
-        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
-        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
-        super(SweepVAE, self).__init__(TrainVAE)
+        self.auto_setup()
+        super(SweepVAE, self).__init__(TrainVAE, None, sys.argv)
 
     @register_default_dispatch
     def __call__(self):
-        print(self)
-        print(self.__dict__)
-        self.auto_setup()
-        self.read_sweep_info()
-        print(self.update_configuration_from_wandb())
-        print(self)
-        print(self.__dict__)
+        WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
+        WandBSweepMixin.WANDB_PROJECT = "vae-tests"
+        WandBSweepMixin.WANDB_GROUP = "vae-exploration"
+        self.parse_experiment_directory()
+        self.read_config_file()
+        if self.get_arg("wandb.sweep", False):
+            self.update_configuration_from_wandb(dump_configuration=True)
 
         self.run()
 
@@ -215,18 +217,14 @@ if __name__ == "__main__":
         assert "--njobs" in sys.argv
         njobs = int(sys.argv[sys.argv.index("--njobs") + 1])
         exp_path_root = sys.argv[1]
+        job_array = []
         for i in range(njobs):
             sys.argv[1] = os.path.join(exp_path_root, f"{i}")
-            print(sys.argv[1])
             func = SweepVAE()
+            job_array.append(func)
+        executor.update_parameters(slurm_array_parallelism=2)
+        jobs = executor.map_array(job_array)  # just a list of jobs
+
     else:
         func = TrainVAE()
-    job = ex.submit(func)
-
-    # TODO: implement sweep https://github.com/facebookincubator/submitit/blob/main/docs/examples.md#job-arrays
-    # sweep = SweepVAE()
-    # executor = submitit.AutoExecutor(folder=log_folder)
-    # # the following line tells the scheduler to only run\
-    # # at most 2 jobs at once. By default, this is several hundreds
-    # executor.update_parameters(slurm_array_parallelism=2)
-    # jobs = executor.map_array(sweep)  # just a list of jobs
+        jobs = [ex.submit(func)]
