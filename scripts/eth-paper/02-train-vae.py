@@ -218,7 +218,7 @@ if __name__ == "__main__":
     if ex.cluster == "slurm":
         ex.update_parameters(
             mem_gb=16,
-            cpus_per_task=12,
+            cpus_per_task=8,
             timeout_min=1000,
             tasks_per_node=1,
             nodes=1,

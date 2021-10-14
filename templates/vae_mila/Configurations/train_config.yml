@@ -1,7 +1,7 @@
 dataloader:
   batch_size: 1024
   shuffle: "True"
-  num_workers: 12
+  num_workers: 8
 
 #max_num_samples: 1024 # uncomment if you want to limit the number of samples to load
 num_epochs: 100
