@@ -1,0 +1,9 @@
+program: scripts/02-train-vae.py
+method: bayes
+metric:
+  goal: minimize
+  name: valid_loss.loss
+parameters:
+  lr:
+    min: 0.0001
+    max: 0.01
