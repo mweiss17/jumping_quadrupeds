@@ -91,6 +91,8 @@ class TrainVAE(
         # if checkpoint_path and Path(checkpoint_path).exists():
         #     print("in checkpoint")
         #     self.model = self.model.load_state_dict(torch.load(checkpoint_path))
+        self.auto_setup()
+
         WandBSweepMixin.WANDB_ENTITY = "jumping_quadrupeds"
         WandBSweepMixin.WANDB_PROJECT = "vae-tests"
         WandBSweepMixin.WANDB_GROUP = "vae-exploration"
