@@ -21,7 +21,8 @@ setup(
         "torchvision",
         "moviepy",
         "imageio",
+        "rich",
         "submitit",
-        "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@master#egg=speedrun",
+        "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
     ],
 )

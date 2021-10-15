@@ -85,9 +85,19 @@ class TrainVAE(
             self.optimizer, "min", factor=0.5, patience=5
         )
 
+    def plot_samples(self, true_image, generated_image):
+        if self.get("use_wandb"):
+            img = np.zeros((3, 64, 64 * 2 + 2), dtype=np.float32)
+            img[:, :, :64] = np.rollaxis(true_image, 2, 0)
+            img[:, :, 66:] = np.rollaxis(generated_image, 2, 0)
+            self.wandb_log_image("L: true, R: generated", img)
+        else:
+            plt.imsave(os.path.join(self.experiment_directory, f"Logs/sample-{self.epoch}.jpg"), img)
+
     @register_default_dispatch
-    def run_train(self):
-        self.model = self.model.load_state_dict(torch.load(self.checkpoint_path)["model"])
+    def __call__(self):
+        if os.path.isfile(self.checkpoint_path):
+            self.model = self.model.load_state_dict(torch.load(self.checkpoint_path)["model"])
 
         for epoch in self.progress(range(self.get("num_epochs")), desc="epochs..."):
             # Train the model
@@ -108,19 +118,17 @@ class TrainVAE(
                     )
             self.next_epoch()
 
-            # log gradients once per epoch
-            if self.get("use_wandb"):
-                self.wandb_watch(self.model, loss, log_freq=1)
-
-            # Plot samples
+            # get a sample
             sampleid = np.random.choice(range(0, len(imgs)))
             true_image = imgs[sampleid].detach().cpu().moveaxis(0, 2).numpy()
             generated_image = x_hat[sampleid].detach().cpu().moveaxis(0, 2).numpy()
+            self.plot_samples(true_image, generated_image)
+
             if self.get("use_wandb"):
-                img = np.zeros((3, 64, 64 * 2 + 2), dtype=np.float32)
-                img[:, :, :64] = np.rollaxis(true_image, 2, 0)
-                img[:, :, 66:] = np.rollaxis(generated_image, 2, 0)
-                self.wandb_log_image("L: true, R: generated", img)
+                # log gradients once per epoch
+                self.wandb_watch(self.model, loss, log_freq=1)
+
+                # record latent variables for this sample
                 self.wandb_log(
                     **{
                         "mu": mu[sampleid],
@@ -128,17 +136,6 @@ class TrainVAE(
                     }
                 )
 
-            else:
-                true_sample_path = os.path.join(
-                    self.experiment_directory,
-                    f"Logs/true-epoch{epoch}.jpg",
-                )
-                generated_sample_path = os.path.join(
-                    self.experiment_directory,
-                    f"Logs/generated-epoch{epoch}.jpg",
-                )
-                plt.imsave(true_sample_path, true_image)
-                plt.imsave(generated_sample_path, generated_image)
 
             self.checkpoint_if_required()
 
@@ -160,7 +157,7 @@ class TrainVAE(
         return valid_loss
 
     def checkpoint_if_required(self):
-        if epoch % self.get("checkpoint_every") == 0:
+        if self.epoch % self.get("checkpoint_every") == 0:
             info = {
                 "encoder": self.model.encoder.state_dict(),
                 "model": self.model.state_dict()
