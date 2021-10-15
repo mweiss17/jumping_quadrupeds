@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.append(os.getcwd())
 
 from jumping_quadrupeds.models.vae import ConvVAE
+from jumping_quadrupeds.encoders import WorldModelsConvEncoder, FlosConvEncoder
 from jumping_quadrupeds.models.dataset import Box2dRollout, MySubset
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun
@@ -76,7 +77,13 @@ class TrainVAE(
         self.train = torch.utils.data.DataLoader(self.train, **self.get("dataloader"))
         self.valid = torch.utils.data.DataLoader(self.valid, **self.get("dataloader"))
 
-        self.model = ConvVAE(img_channels=3, latent_size=32)
+        img_channels = 3
+        breakpoint()
+        if self.get("encoder_type") == "flo":
+            encoder = FlosConvEncoder(img_channels)
+        else:
+            encoder = WorldModelsConvEncoder(img_channels)
+        self.model = ConvVAE(encoder, img_channels=img_channels, latent_size=32)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
