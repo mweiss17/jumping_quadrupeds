@@ -190,7 +190,7 @@ class Salvo(object):
         if is_dry_run:
             job = None
         else:
-            command = ["python3", script_path, script_args]
+            command = ["python3", script_path, *script_args]
             # Setup Submitit
             if self.executor is None:
                 self.executor = self.set_it_up(script_args[0])
