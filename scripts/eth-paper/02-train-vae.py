@@ -78,7 +78,6 @@ class TrainVAE(
         self.valid = torch.utils.data.DataLoader(self.valid, **self.get("dataloader"))
 
         img_channels = 3
-        breakpoint()
         if self.get("encoder_type") == "flo":
             encoder = FlosConvEncoder(img_channels)
         else:
