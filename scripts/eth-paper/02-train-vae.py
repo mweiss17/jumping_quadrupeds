@@ -98,12 +98,19 @@ class TrainVAE(
             img[:, :, 66:] = np.rollaxis(generated_image, 2, 0)
             self.wandb_log_image("L: true, R: generated", img)
         else:
-            plt.imsave(os.path.join(self.experiment_directory, f"Logs/sample-{self.epoch}.jpg"), img)
+            plt.imsave(
+                os.path.join(
+                    self.experiment_directory, f"Logs/sample-{self.epoch}.jpg"
+                ),
+                img,
+            )
 
     @register_default_dispatch
     def __call__(self):
         if os.path.isfile(self.checkpoint_path):
-            self.model = self.model.load_state_dict(torch.load(self.checkpoint_path)["model"])
+            self.model = self.model.load_state_dict(
+                torch.load(self.checkpoint_path)["model"]
+            )
 
         for epoch in self.progress(range(self.get("num_epochs")), desc="epochs..."):
             # Train the model
@@ -113,6 +120,7 @@ class TrainVAE(
                 loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                 self.optimizer.zero_grad()
                 loss["loss"].backward()
+                self.optimizer.step()
                 self.next_step()
                 if self.get("use_wandb"):
                     self.wandb_log(
@@ -124,7 +132,6 @@ class TrainVAE(
 
             self.next_epoch()
             self.scheduler.step(loss["loss"])
-
             # get a sample
             sampleid = np.random.choice(range(0, len(imgs)))
             true_image = imgs[sampleid].detach().cpu().moveaxis(0, 2).numpy()
@@ -142,7 +149,6 @@ class TrainVAE(
                         "var": torch.exp(0.5 * log_var)[sampleid],
                     }
                 )
-
 
             self.checkpoint_if_required()
 
@@ -167,9 +173,10 @@ class TrainVAE(
         if self.epoch % self.get("checkpoint_every") == 0:
             info = {
                 "encoder": self.model.encoder.state_dict(),
-                "model": self.model.state_dict()
+                "model": self.model.state_dict(),
             }
-            torch.save(info, f"{self.experiment_directory}/Weights/vae-{epoch}.pt")
+            torch.save(info, f"{self.experiment_directory}/Weights/vae-{self.epoch}.pt")
+
 
 if __name__ == "__main__":
     # Default cmdline args Flo
