@@ -157,20 +157,21 @@ class Salvo(object):
 
     def set_it_up(self, experiment_directory):
         # create the submitit executor for creating and managing jobs
-        ex = submitit.AutoExecutor(folder=os.path.join(experiment_directory, "Logs"))
+        executor = submitit.AutoExecutor(folder=os.path.join(experiment_directory, "Logs"))
 
         # setup the executor parameters based on the cluster location
-        if ex.cluster == "slurm":
-            ex.update_parameters(
+        if executor.cluster == "slurm":
+            executor.update_parameters(
                 mem_gb=16,
                 cpus_per_task=12,
                 timeout_min=1000,
                 tasks_per_node=1,
                 nodes=1,
-                slurm_partition="main",
+                slurm_partition="long",
                 gres="gpu:rtx8000:1",
             )
-        return ex
+        return executor
+
 
     def launch_one_job(self, job_idx, kwargs, script_path, template_args, is_dry_run=False, use_abs_path=False):
 
@@ -193,7 +194,7 @@ class Salvo(object):
             # Setup Submitit
             if self.executor is None:
                 self.executor = self.set_it_up(script_args[0])
-            job = executor.submit(CommandFunction(command))
+            job = self.executor.submit(CommandFunction(command))
 
         job_info = {
             "job": job,

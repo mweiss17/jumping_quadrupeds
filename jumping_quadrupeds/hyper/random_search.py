@@ -10,7 +10,7 @@ def generator(args):
     parsed = parser.parse_args(args)
 
     dists_to_sample = {}
-    for dist_string in parsed.distributions.split("."):
+    for dist_string in parsed.distributions.split("+"):
         hyper_name, dist_info = dist_string.split("~")
         dist_name, params = dist_info.split("[")
         dists_to_sample[hyper_name] = dists.get_dist(dist_name, params[:-1])
