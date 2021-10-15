@@ -113,7 +113,6 @@ class TrainVAE(
                 loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                 self.optimizer.zero_grad()
                 loss["loss"].backward()
-                self.scheduler.step(loss["loss"])
                 self.next_step()
                 if self.get("use_wandb"):
                     self.wandb_log(
@@ -122,7 +121,9 @@ class TrainVAE(
                             "lr": self.optimizer.param_groups[0]["lr"],
                         }
                     )
+
             self.next_epoch()
+            self.scheduler.step(loss["loss"])
 
             # get a sample
             sampleid = np.random.choice(range(0, len(imgs)))
