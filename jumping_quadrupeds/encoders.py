@@ -9,7 +9,6 @@ class WorldModelsConvEncoder(nn.Module):  # pylint: disable=too-many-instance-at
 
     def __init__(self, channels, activation=nn.ReLU):
         super(WorldModelsConvEncoder, self).__init__()
-        self.img_channels = channels
         self.activation = activation()
         self.conv1 = nn.Conv2d(channels, 32, 4, stride=2)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)

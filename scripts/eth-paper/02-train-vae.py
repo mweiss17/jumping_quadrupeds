@@ -34,7 +34,6 @@ class TrainVAE(
 ):
     WANDB_ENTITY = "jumping_quadrupeds"
     WANDB_PROJECT = "vae-tests"
-    WANDB_GROUP = "vae-exploration"
 
     def __init__(self):
         super(TrainVAE, self).__init__()
