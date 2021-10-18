@@ -158,10 +158,10 @@ class ConvActorCritic(AbstractActorCritic):
 
     def load_encoder(self, filepath):
         # Load the state encoder
-        self.pi.encoder.load_state_dict(torch.load(filepath))
+        self.pi.encoder.load_state_dict(torch.load(filepath)["encoder"])
 
         # Load the state encoder
-        self.v.encoder.load_state_dict(torch.load(filepath))
+        self.v.encoder.load_state_dict(torch.load(filepath)["encoder"])
 
     def freeze_encoder(self):
         for param in self.pi.encoder.parameters():
