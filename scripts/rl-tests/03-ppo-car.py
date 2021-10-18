@@ -5,7 +5,7 @@ import numpy as np
 import submitit
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.rl.buffer import PpoBuffer
-from jumping_quadrupeds.rl.networks import ConvActorCritic, ConvSharedActorCritic
+from jumping_quadrupeds.rl.networks import ConvActorCritic
 from jumping_quadrupeds.rl.ppo import PPO
 from jumping_quadrupeds.env import make_env
 
