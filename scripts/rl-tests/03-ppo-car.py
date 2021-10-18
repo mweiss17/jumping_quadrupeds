@@ -2,6 +2,7 @@ import gym
 import torch
 import sys
 import numpy as np
+import submitit
 from speedrun import BaseExperiment, WandBMixin, IOMixin
 from jumping_quadrupeds.rl.buffer import PpoBuffer
 from jumping_quadrupeds.rl.networks import ConvActorCritic, ConvSharedActorCritic
@@ -9,9 +10,9 @@ from jumping_quadrupeds.rl.ppo import PPO
 from jumping_quadrupeds.env import make_env
 
 
-class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
-    WandBMixin.WANDB_ENTITY = "jumping_quadrupeds"
-    WandBMixin.WANDB_PROJECT = "rl-encoder-test"
+class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointable):
+    WANDB_ENTITY = "jumping_quadrupeds"
+    WANDB_PROJECT = "rl-encoder-test"
 
     def __init__(self):
         super(TrainPPOConv, self).__init__()
