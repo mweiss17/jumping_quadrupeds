@@ -133,7 +133,7 @@ class AbstractActorCritic(nn.Module):
 
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
-        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16, activation=nn.Tanh
+        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16, activation=nn.ReLU
     ):
         super().__init__()
 
@@ -167,52 +167,6 @@ class ConvActorCritic(AbstractActorCritic):
         for param in self.pi.encoder.parameters():
             param.requires_grad = False
         for param in self.v.encoder.parameters():
-            param.requires_grad = False
-
-    def step(self, obs):
-        with torch.no_grad():
-            pi = self.pi._distribution(obs)
-            a = pi.sample()
-            logp_a = self.pi._log_prob_from_distribution(pi, a)
-            v = self.v(obs)
-        return a.cpu().numpy()[0], v.cpu().numpy(), logp_a.cpu().numpy()
-
-    def get_policy_params(self):
-        return self.pi.parameters()
-
-    def get_value_params(self):
-        return self.v.parameters()
-
-
-class ConvSharedActorCritic(AbstractActorCritic):
-    def __init__(
-        self, observation_space, action_space, encoder_class, hidden_sizes=16, activation=nn.Tanh
-    ):
-        super().__init__()
-
-        obs_dim = observation_space.shape[0]
-
-        # policy builder depends on action space
-        if isinstance(action_space, Box):
-            self.pi = CNNGaussianActor(
-                observation_space.shape[-1],
-                action_space.shape[0],
-                hidden_sizes,  # 4 * 4 square scaling factor for car-racing
-                activation,
-            )
-        elif isinstance(action_space, Discrete):
-            self.pi = CNNCategoricalActor(
-                obs_dim, action_space.n, hidden_sizes, activation
-            )
-        # build value function
-        self.v = CNNCritic(observation_space.shape[-1], hidden_sizes, activation)
-
-    def load_encoder(self, filepath):
-        # Load the state encoder
-        self.encoder.load_state_dict(torch.load(filepath))
-
-    def freeze_encoder(self):
-        for param in self.encoder.parameters():
             param.requires_grad = False
 
     def step(self, obs):
