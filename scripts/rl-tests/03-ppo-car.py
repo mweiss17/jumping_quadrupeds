@@ -3,7 +3,7 @@ import torch
 import sys
 import numpy as np
 import submitit
-from speedrun import BaseExperiment, WandBMixin, IOMixin
+from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.rl.buffer import PpoBuffer
 from jumping_quadrupeds.rl.networks import ConvActorCritic, ConvSharedActorCritic
 from jumping_quadrupeds.rl.ppo import PPO
@@ -67,8 +67,9 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpo
             self.get("save_transitions", 0),
         )
         self.ppo = PPO(self, env, ac, buf, device=device)
-
-    def run(self):
+    
+    @register_default_dispatch
+    def __call__(self):
         self.ppo.train_loop()
 
 
