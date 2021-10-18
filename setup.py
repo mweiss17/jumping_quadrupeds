@@ -22,6 +22,7 @@ setup(
         "moviepy",
         "imageio",
         "rich",
+        "pyvirtualdisplay",
         "submitit",
         "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
     ],
