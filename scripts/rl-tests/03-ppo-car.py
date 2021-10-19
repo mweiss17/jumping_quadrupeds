@@ -1,20 +1,22 @@
 import gym
 import torch
+import sys
 import numpy as np
-from speedrun import BaseExperiment, WandBMixin, IOMixin
+import submitit
+from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.rl.buffer import PpoBuffer
-from jumping_quadrupeds.rl.networks import ConvActorCritic, ConvSharedActorCritic
+from jumping_quadrupeds.rl.networks import ConvActorCritic
 from jumping_quadrupeds.rl.ppo import PPO
 from jumping_quadrupeds.env import make_env
 
 
-class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
+class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointable):
+    WANDB_ENTITY = "jumping_quadrupeds"
+    WANDB_PROJECT = "rl-encoder-test"
+
     def __init__(self):
         super(TrainPPOConv, self).__init__()
         self.auto_setup()
-        WandBMixin.WANDB_ENTITY = "jumping_quadrupeds"
-        WandBMixin.WANDB_PROJECT = "rl-tests"
-        WandBMixin.WANDB_GROUP = "vnav-car-racing-ppo-conv"
 
         if self.get("use_wandb"):
             self.initialize_wandb()
@@ -33,10 +35,7 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
-        if self.get("shared_encoder"):
-            ac = ConvSharedActorCritic(env.observation_space, env.action_space)
-        else:
-            ac = ConvActorCritic(env.observation_space, env.action_space)
+        ac = ConvActorCritic(env.observation_space, env.action_space, shared_encoder=self.get("shared_encoder", False))
 
         if self.get("vae_enc_checkpoint"):
             print(f"Loading saved encoder checkpoint to the state encoder")
@@ -65,12 +64,20 @@ class TrainPPOConv(BaseExperiment, WandBMixin, IOMixin):
             self.get("gamma"),
             self.get("lam"),
             device,
-            self.get("save_transitions"),
+            self.get("save_transitions", 0),
         )
         self.ppo = PPO(self, env, ac, buf, device=device)
-
-    def run(self):
+    
+    @register_default_dispatch
+    def __call__(self):
         self.ppo.train_loop()
 
 
-TrainPPOConv().run()
+if __name__ == "__main__":
+    # Default cmdline args Flo
+    if len(sys.argv) == 1:
+        sys.argv = [sys.argv[0], "experiments/ppo-car", "--inherit", "templates/ppo-car"]
+
+    TrainPPOConv().run()
+
+

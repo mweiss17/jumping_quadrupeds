@@ -4,7 +4,7 @@ from gym.spaces import Box, Discrete
 from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.nn import functional as F
-from jumping_quadrupeds.encoders import ConvEncoder2, ConvEncoder
+from jumping_quadrupeds.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.rl.utils import mlp
 
 
@@ -56,10 +56,9 @@ class CNNCategoricalActor(Actor):
 
 
 class CNNGaussianActor(Actor):
-    def __init__(self, channels, act_dim, hidden_sizes, activation=nn.ReLU):
+    def __init__(self, encoder, act_dim, hidden_sizes):
         super().__init__()
-        self.encoder = ConvEncoder(channels, activation)
-        self.sigmoid = nn.Sigmoid()
+        self.encoder = encoder
         self.linear = nn.Linear(64 * hidden_sizes, act_dim)
         log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
@@ -67,9 +66,8 @@ class CNNGaussianActor(Actor):
     def _distribution(self, obs):
         if len(obs.shape) == 3:
             obs.unsqueeze_(0)
-
         preactivations = self.encoder(obs)
-        mu = self.linear(self.sigmoid(preactivations))
+        mu = self.linear(torch.sigmoid(preactivations))
         # re-scale mu[0] which is [-1, 1] turn angle
         mu_rescaled = torch.ones_like(mu)
         mu_rescaled[:, 0] = 2.0
@@ -84,37 +82,12 @@ class CNNGaussianActor(Actor):
         return pi.log_prob(act)
 
 
-class GaussianActor(Actor):
-    def __init__(self, channels, act_dim, hidden_sizes, activation=nn.ReLU):
-        super().__init__()
-        self.sigmoid = nn.Sigmoid()
-        self.linear = nn.Linear(64 * hidden_sizes, act_dim)
-        log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
-        self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
-
-    def _distribution(self, obs):
-        if len(obs.shape) == 3:
-            obs.unsqueeze_(0)
-        preactivations = self.encoder(obs)
-        mu = self.linear(self.sigmoid(preactivations))
-        # re-scale mu[0] which is [-1, 1] turn angle
-        mu_rescaled = torch.ones_like(mu)
-        mu_rescaled[:, 0] = 2.0
-        mu_translate = torch.zeros_like(mu)
-        mu_translate[:, 0] = 1.0
-        mu = mu_rescaled * mu - mu_translate
-        std = torch.exp(self.log_std)
-
-        return Normal(mu, std)
-
-    def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act)
 
 
 class CNNCritic(nn.Module):
-    def __init__(self, channels, hidden_sizes, activation=nn.ReLU):
+    def __init__(self, encoder, hidden_sizes):
         super().__init__()
-        self.encoder = ConvEncoder(channels, activation)
+        self.encoder = encoder
         self.linear = nn.Linear(64 * hidden_sizes, 1)
 
     def forward(self, obs):
@@ -160,86 +133,40 @@ class AbstractActorCritic(nn.Module):
 
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
-        self, observation_space, action_space, hidden_sizes=16, activation=nn.Tanh
+        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16, activation=nn.ReLU
     ):
         super().__init__()
 
-        obs_dim = observation_space.shape[0]
+        channels = observation_space.shape[-1]
+
+        actor_encoder = WorldModelsConvEncoder(channels=channels, activation=activation)
+        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels=channels, activation=activation)
 
         # policy builder depends on action space
         if isinstance(action_space, Box):
             self.pi = CNNGaussianActor(
-                observation_space.shape[-1],
+                actor_encoder,
                 action_space.shape[0],
                 hidden_sizes,  # 4 * 4 square scaling factor for car-racing
-                activation,
             )
         elif isinstance(action_space, Discrete):
             self.pi = CNNCategoricalActor(
-                obs_dim, action_space.n, hidden_sizes, activation
+                channels, action_space.n, hidden_sizes
             )
         # build value function
-        self.v = CNNCritic(observation_space.shape[-1], hidden_sizes, activation)
+        self.v = CNNCritic(critic_encoder, hidden_sizes)
 
     def load_encoder(self, filepath):
         # Load the state encoder
-        self.pi.encoder.load_state_dict(torch.load(filepath))
+        self.pi.encoder.load_state_dict(torch.load(filepath)["encoder"])
 
         # Load the state encoder
-        self.v.encoder.load_state_dict(torch.load(filepath))
+        self.v.encoder.load_state_dict(torch.load(filepath)["encoder"])
 
     def freeze_encoder(self):
         for param in self.pi.encoder.parameters():
             param.requires_grad = False
         for param in self.v.encoder.parameters():
-            param.requires_grad = False
-
-    def step(self, obs):
-        with torch.no_grad():
-            pi = self.pi._distribution(obs)
-            a = pi.sample()
-            logp_a = self.pi._log_prob_from_distribution(pi, a)
-            v = self.v(obs)
-        return a.cpu().numpy()[0], v.cpu().numpy(), logp_a.cpu().numpy()
-
-    def get_policy_params(self):
-        return self.pi.parameters()
-
-    def get_value_params(self):
-        return self.v.parameters()
-
-
-class ConvSharedActorCritic(AbstractActorCritic):
-    def __init__(
-        self, observation_space, action_space, hidden_sizes=16, activation=nn.Tanh
-    ):
-        super().__init__()
-
-        obs_dim = observation_space.shape[0]
-
-        self.encoder = ConvEncoder(channels, activation)
-
-        # policy builder depends on action space
-        if isinstance(action_space, Box):
-            self.pi = CNNGaussianActor(
-                observation_space.shape[-1],
-                action_space.shape[0],
-                hidden_sizes,  # 4 * 4 square scaling factor for car-racing
-                activation,
-            )
-        elif isinstance(action_space, Discrete):
-            self.pi = CNNCategoricalActor(
-                obs_dim, action_space.n, hidden_sizes, activation
-            )
-        # build value function
-        self.v = CNNCritic(observation_space.shape[-1], hidden_sizes, activation)
-
-    def load_encoder(self, filepath):
-        # Load the state encoder
-        self.encoder.load_state_dict(torch.load(filepath))
-
-    def freeze_encoder(self):
-        for param in self.encoder.parameters():
             param.requires_grad = False
 
     def step(self, obs):

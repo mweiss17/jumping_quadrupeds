@@ -4,12 +4,11 @@ from typing import List, Any, TypeVar
 from torch import nn
 
 
-class ConvEncoder(nn.Module):  # pylint: disable=too-many-instance-attributes
+class WorldModelsConvEncoder(nn.Module):  # pylint: disable=too-many-instance-attributes
     """World Models' encoder"""
 
     def __init__(self, channels, activation=nn.ReLU):
-        super(ConvEncoder, self).__init__()
-        self.img_channels = channels
+        super(WorldModelsConvEncoder, self).__init__()
         self.activation = activation()
         self.conv1 = nn.Conv2d(channels, 32, 4, stride=2)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
@@ -26,11 +25,11 @@ class ConvEncoder(nn.Module):  # pylint: disable=too-many-instance-attributes
         return x
 
 
-class ConvEncoder2(nn.Module):  # pylint: disable=too-many-instance-attributes
+class FlosConvEncoder(nn.Module):  # pylint: disable=too-many-instance-attributes
     """Florian's Encoder"""
 
     def __init__(self, channels, activation=nn.ReLU):
-        super(ConvEncoder2, self).__init__()
+        super(FlosConvEncoder, self).__init__()
 
         self.mu_net = nn.Sequential(
             nn.Conv2d(channels, 32, kernel_size=8, stride=4, padding=0),

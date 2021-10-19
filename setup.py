@@ -14,7 +14,6 @@ setup(
         "torch>=1.8",
         "tqdm",
         "attrs",
-        "gym[box2d]",
         "pillow",
         "wandb",
         "scipy",
@@ -22,6 +21,9 @@ setup(
         "torchvision",
         "moviepy",
         "imageio",
-        "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@master#egg=speedrun",
+        "rich",
+        "pyvirtualdisplay",
+        "submitit",
+        "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
     ],
 )
