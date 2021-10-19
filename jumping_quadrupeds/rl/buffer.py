@@ -12,7 +12,14 @@ class PpoBuffer:
     """
 
     def __init__(
-        self, obs_dim, act_dim, steps_per_epoch, gamma, lam, device, save_transitions=0
+        self,
+        obs_dim,
+        act_dim,
+        steps_per_epoch,
+        gamma,
+        lam,
+        device,
+        save_transitions=0,
     ):
         self.steps_per_epoch = steps_per_epoch
         self.total_save_transitions = save_transitions
@@ -82,7 +89,7 @@ class PpoBuffer:
 
         self.path_start_idx = self.ptr
 
-    def _get(self):
+    def get_all(self):
         data = dict(
             obs=self.obs_buf,
             act=self.act_buf,
@@ -90,32 +97,48 @@ class PpoBuffer:
             adv=self.adv_buf,
             logp=self.logp_buf,
         )
-        return data
-
-    def get(self, reset=True):
-        """
-        Call this at the end of an epoch to get all of the data from
-        the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
-        """
-        assert (
-            self.ptr == self.steps_per_epoch
-        )  # buffer has to be full before you can get
-        if reset:
-            self.ptr, self.path_start_idx = 0, 0
-        # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = np.mean(self.adv_buf), np.std(self.adv_buf)
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
-        data = self._get()
         return {
             k: torch.as_tensor(v, dtype=torch.float32).to(self.device)
             for k, v in data.items()
         }
 
+    def advantage_normalize(self):
+        # the next two lines implement the advantage normalization trick
+        adv_mean, adv_std = np.mean(self.adv_buf), np.std(self.adv_buf)
+        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
+
+    def reset(self):
+        assert (
+            self.ptr == self.steps_per_epoch
+        )  # buffer has to be full before you can get
+        self.minibatch_ptr, self.ptr, self.path_start_idx = 0, 0, 0
+
     def save(self, path):
         if self.cur_transition_count < self.total_save_transitions:
-            data = self._get()
+            data = self.get_all()
             np.save(
                 os.path.join(path, "Logs", f"buffer-{self.cur_transition_count}"), data
             )
             self.cur_transition_count += self.steps_per_epoch
+
+
+class BufferDataset(torch.utils.data.Dataset):
+    def __init__(self, obs, act, ret, adv, logp):
+        self.obs = obs
+        self.act = act
+        self.ret = ret
+        self.adv = adv
+        self.logp = logp
+
+    def __len__(self):
+        return len(self.obs)
+
+    def __getitem__(self, idx):
+        sample = dict(
+            obs=self.obs[idx],
+            act=self.act[idx],
+            ret=self.ret[idx],
+            adv=self.adv[idx],
+            logp=self.logp[idx],
+        )
+        return sample

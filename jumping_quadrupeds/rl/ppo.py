@@ -5,7 +5,7 @@ import torch
 from torch.optim import Adam
 from tqdm import tqdm, trange
 
-from jumping_quadrupeds.rl.buffer import PpoBuffer
+from jumping_quadrupeds.rl.buffer import PpoBuffer, BufferDataset
 from jumping_quadrupeds.rl.networks import AbstractActorCritic
 
 
@@ -94,24 +94,20 @@ class PPO:
 
     def update(self):
         """Updates the policy and value function based on the latest replay buffer"""
-
-        data = self.buf.get()
+        self.buf.advantage_normalize()
         self.buf.save(self.exp.experiment_directory)
-
-        ## this is only used for debugging - compute the old loss of policy and value function
-        pi_l_old, pi_info_old = self.compute_loss_pi(data)
-        pi_l_old = pi_l_old.item()
-        v_l_old = self.compute_loss_v(data).item()
-
-        # Train policy with multiple steps of gradient descent
-        if self._config.get("verbose"):
-            tqdm.write("Training pi")
+        dataset = BufferDataset(**self.buf.get_all())
+        dataloader = torch.utils.data.DataLoader(
+            dataset, batch_size=self._config.get("minibatch_size"), shuffle=True
+        )
 
         self.ac.train()
-
-        for i in range(self._config.get("train_pi_iters")):
+        for batch in dataloader:
             self.pi_optimizer.zero_grad()
-            loss_pi, pi_info = self.compute_loss_pi(data)
+            self.vf_optimizer.zero_grad()
+
+            loss_pi, pi_info = self.compute_loss_pi(batch)
+            loss_v = self.compute_loss_v(batch)
             kl = np.mean(pi_info["kl"])
             if kl > 1.5 * self._config.get("target_kl"):
                 if self._config.get("verbose"):
@@ -119,52 +115,29 @@ class PPO:
                         f"Early stopping at step {i}/{self._config.get('train_pi_iters')} due to reaching max kl."
                     )
                 break
+
             loss_pi.backward()
-            self.pi_optimizer.step()
-
-        # Value function learning
-        if self._config.get("verbose"):
-            tqdm.write("Training Val")
-
-        for i in range(self._config.get("train_v_iters")):
-            self.vf_optimizer.zero_grad()
-            loss_v = self.compute_loss_v(data)
             loss_v.backward()
+            self.pi_optimizer.step()
             self.vf_optimizer.step()
 
         if self.exp.get("use_wandb"):
-
-            sampleid = int(np.random.uniform(0, data["obs"].shape[0]))
-            self.exp.wandb_log_image("observation", data["obs"][sampleid])
+            sampleid = int(np.random.uniform(0, batch["obs"].shape[0]))
+            self.exp.wandb_log_image("observation", batch["obs"][sampleid])
+            act = batch["act"].detach().mean(axis=0).cpu().numpy()
             self.exp.wandb_log(
                 **{
-                    "logp-turn": data["logp"][sampleid].detach().cpu().numpy()[0],
-                    "act-turn": data["act"][sampleid].detach().cpu().numpy()[0],
-                    "logp-gas": data["logp"][sampleid].detach().cpu().numpy()[1],
-                    "act-gas": data["act"][sampleid].detach().cpu().numpy()[1],
-                    "logp-brake": data["logp"][sampleid].detach().cpu().numpy()[2],
-                    "act-brake": data["act"][sampleid].detach().cpu().numpy()[2],
-                    "LossPi": pi_l_old,
-                    "LossV": v_l_old,
+                    "act-turn": act[0],
+                    "act-gas": act[1],
+                    "act-brake": act[2],
+                    "LossPi": loss_pi.detach().cpu().item(),
+                    "LossV": loss_v.detach().cpu().item(),
                     "KL": kl,
                     "Entropy": np.mean(pi_info["ent"]),
                     "ClipFrac": np.mean(pi_info["cf"]),
-                    "DeltaLossPi": (loss_pi.item() - pi_l_old),
-                    "DeltaLossV": (loss_v.item() - v_l_old),
                 }
             )
-
-        ## Log changes from update
-        # kl, ent, cf = pi_info["kl"], pi_info_old["ent"], pi_info["cf"]
-        # logger.store(
-        #     LossPi=pi_l_old,
-        #     LossV=v_l_old,
-        #     KL=kl,
-        #     Entropy=ent,
-        #     ClipFrac=cf,
-        #     DeltaLossPi=(loss_pi.item() - pi_l_old),
-        #     DeltaLossV=(loss_v.item() - v_l_old),
-        # )
+        self.buf.reset()
 
     def save_checkpoint(self, epoch):
         torch.save(

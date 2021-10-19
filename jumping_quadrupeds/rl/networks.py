@@ -4,7 +4,7 @@ from gym.spaces import Box, Discrete
 from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.nn import functional as F
-from jumping_quadrupeds.encoders import WorldModelsConvEncoder
+from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.rl.utils import mlp
 
 
@@ -82,8 +82,6 @@ class CNNGaussianActor(Actor):
         return pi.log_prob(act)
 
 
-
-
 class CNNCritic(nn.Module):
     def __init__(self, encoder, hidden_sizes):
         super().__init__()
@@ -140,7 +138,11 @@ class ConvActorCritic(AbstractActorCritic):
         channels = observation_space.shape[-1]
 
         actor_encoder = WorldModelsConvEncoder(channels, nn.Tanh)
-        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels, nn.Tanh)
+        critic_encoder = (
+            actor_encoder
+            if shared_encoder
+            else WorldModelsConvEncoder(channels, nn.Tanh)
+        )
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space.shape[0],
@@ -176,4 +178,3 @@ class ConvActorCritic(AbstractActorCritic):
 
     def get_value_params(self):
         return self.v.parameters()
-
