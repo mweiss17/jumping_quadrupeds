@@ -66,3 +66,6 @@ use_wandb: True
 # ppo_checkpoint: experiments/ppo/Weights/ac-40.pt
 # pi_optim_checkpoint: experiments/ppo/Weights/pi-optim-40.pt
 # vf_optim_checkpoint: experiments/ppo/Weights/vf-optim-40.pt
+
+# Sweep: Oct 19, 2021
+#  python3 scripts/salvo.py --- scripts/rl-tests/03-ppo-car.py ~/scratch-new/experiments/ppo-finetune-{job_idx} --inherit templates/ppo-car --config._wandb_run_name ppo-finetune-{job_idx} --config._wandb_group ppo-finetune-sweep --config.clip_ratio {clip} --config.pi_lr {pi_lr} --config.vf_lr {vf_lr} --config.target_kl {target_kl} --- jumping_quadrupeds/hyper/random_search.py -d pi_lr~log_uniform[0.00001,0.001]+vf_lr~log_uniform[0.00001,0.001]+clip~log_uniform[0.05,0.4]+target_kl~uniform[0.005,0.02] -n 50
