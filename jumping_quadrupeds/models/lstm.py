@@ -29,7 +29,9 @@ class EthLstm(nn.Module):
         self.loss_func = nn.MSELoss()  # not sure about this # FIXME
 
     def reset_hidden(self, minibatch, device):
-        self.hiddens = [h.expand(minibatch, -1).to(device) for h in self.hidden_template]
+        self.hiddens = [
+            h.expand(minibatch, -1).to(device) for h in self.hidden_template
+        ]
         self.cells = [c.expand(minibatch, -1).to(device) for c in self.cells_template]
 
     def forward(self, vae_latent, displacement=None):
@@ -43,7 +45,9 @@ class EthLstm(nn.Module):
         # hidden_1, cell_1 = self.lstm_0(hidden_0, (hidden_1, cell_1))
         for i, l in enumerate(self.lstms):
             lstm_input = x if i == 0 else self.hiddens[i - 1]
-            self.hiddens[i], self.cells[i] = l(lstm_input, (self.hiddens[i], self.cells[i]))
+            self.hiddens[i], self.cells[i] = l(
+                lstm_input, (self.hiddens[i], self.cells[i])
+            )
 
         last_idx = len(self.lstms) - 1
         h_next = self.hiddens[last_idx]
@@ -60,7 +64,6 @@ class EthLstm(nn.Module):
 
         l2 = self.loss_func(l_next, l_next_gt)
 
-        sample = Normal(0, 1).sample([self.output_size])  # comparing to a unit gaussian
-        kl = F.kl_div(norm.log_prob(h_next), sample, reduce="batchmean").mean()
+        kl = -0.5 * torch.sum(1 + 2 * logsigma - mu.pow(2) - (2 * logsigma).exp())
 
         return {"l2": l2, "kl": kl, "loss": l2 + kl}

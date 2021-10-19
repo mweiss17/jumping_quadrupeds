@@ -21,7 +21,9 @@ class Box2dRollout(ImageFolder):
 
         See :class:`DatasetFolder` for details.
         """
-        classes = sorted(entry.name for entry in os.scandir(directory) if entry.is_dir())
+        classes = sorted(
+            entry.name for entry in os.scandir(directory) if entry.is_dir()
+        )
         if not classes:
             raise FileNotFoundError(f"Couldn't find any class folder in {directory}.")
 
@@ -69,6 +71,34 @@ class Hdf5ImgSeqDataset(Hdf5ImgDataset):
             out.append(img.unsqueeze(0))
         out = torch.cat(out)
         return out
+
+
+class ApplyTransform(Dataset):
+    """
+    Apply transformations to a Dataset
+
+    Arguments:
+        dataset (Dataset): A Dataset that returns (sample, target)
+        transform (callable, optional): A function/transform to be applied on the sample
+        target_transform (callable, optional): A function/transform to be applied on the target
+
+    """
+
+    def __init__(self, dataset, transform=None, target_transform=None):
+        self.dataset = dataset
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def __getitem__(self, idx):
+        sample, target = self.dataset[idx]
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return sample, target
+
+    def __len__(self):
+        return len(self.dataset)
 
 
 class MySubset(torch.utils.data.Dataset):
