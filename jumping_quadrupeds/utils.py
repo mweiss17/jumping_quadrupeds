@@ -1,4 +1,7 @@
 import argparse
+import os
+
+from torchvision.transforms import transforms
 
 
 def get_args():  # TODO make this `get_args_ppo()` or something more specific
@@ -27,3 +30,15 @@ def get_args():  # TODO make this `get_args_ppo()` or something more specific
     args = parser.parse_args()
 
     return args
+
+
+def common_img_transforms(with_flip=False):
+    out = [transforms.Resize(64)]
+    if with_flip:
+        out.append(transforms.RandomHorizontalFlip())
+    out.append(transforms.ToTensor())
+    return transforms.Compose(out)
+
+
+def abs_path(x):
+    return os.path.abspath(os.path.expanduser(os.path.expandvars(x)))

@@ -1,16 +1,21 @@
+#checkpoint_every: 1
 dataloader:
-  batch_size: 1024
-  shuffle: "False"
-  num_workers: 12
-
-max_num_samples: 1000 # uncomment if you want to limit the number of samples to load
-num_epochs: 100
-checkpoint_every: 1
-valid_every: 1
-log_wandb_every: 10
-use_wandb: "False"
-
+  batch_size: 2
+  num_workers: 0
+  shuffle: 'True'
+#git_rev: ff7a0d50f5634b7cda393161db079e32dd21d1db
+#log_wandb_every: 10
+#max_num_samples: 1000
+#num_epochs: 100
 paths:
-  vae_weights: "logs/vae-checkpoints/vae-71.pt"
+  rollouts: ../../scripts/eth-paper/random-rollouts-50k/rollouts_e256_t200.hdf5
+  vae_weights: ../../experiments/train-vae-enc/Weights/vae-0.pt
+use_wandb: 'False'
+#valid_every: 1
+vae:
+  latent: 32
+num_epochs: 50
+lr: 0.0001
 
-
+lstm:
+  backprop_after: 20 # should be a multiple of the dataset len

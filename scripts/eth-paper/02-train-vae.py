@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 
 # to add jumping_quadrupeds to python path
+from jumping_quadrupeds.utils import common_img_transforms
+
 sys.path.append(os.getcwd())
 
 from jumping_quadrupeds.models.vae import ConvVAE
@@ -35,21 +37,7 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
         if self.get("use_wandb"):
             self.initialize_wandb()
 
-        self.transform_dict = {
-            "train": transforms.Compose(
-                [
-                    transforms.Resize(64),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.ToTensor(),
-                ]
-            ),
-            "valid": transforms.Compose(
-                [
-                    transforms.Resize(64),
-                    transforms.ToTensor(),
-                ]
-            ),
-        }
+        self.transforms = {"train": common_img_transforms(with_flip=True), "valid": common_img_transforms()}
 
         # CUDA for PyTorch
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,18 +47,14 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
 
     def _build(self):
         # Dataset
-        dataset_path = os.path.abspath(
-            os.path.expanduser(os.path.expandvars(self.get("paths/rollouts")))
-        )
+        dataset_path = os.path.abspath(os.path.expanduser(os.path.expandvars(self.get("paths/rollouts"))))
         dataset = Box2dRollout(dataset_path)
 
         # Split dataset into train and validation splits
         split_idx = len(dataset) // 8
-        self.valid, self.train = torch.utils.data.random_split(
-            dataset, [split_idx, len(dataset) - split_idx]
-        )
-        self.train = MySubset(self.train, self.transform_dict["train"])
-        self.valid = MySubset(self.valid, self.transform_dict["valid"])
+        self.valid, self.train = torch.utils.data.random_split(dataset, [split_idx, len(dataset) - split_idx])
+        self.train = MySubset(self.train, self.transforms["train"])
+        self.valid = MySubset(self.valid, self.transforms["valid"])
 
         self.train = torch.utils.data.DataLoader(self.train, **self.get("dataloader"))
         self.valid = torch.utils.data.DataLoader(self.valid, **self.get("dataloader"))
@@ -78,9 +62,7 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
         self.model = ConvVAE(img_channels=3, latent_size=32)
         self.model.to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, "min", factor=0.5, patience=5
-        )
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", factor=0.5, patience=5)
 
     @register_default_dispatch
     def trainloop(self):
@@ -99,10 +81,7 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 self.next_step()
                 if self.get("use_wandb"):
                     self.wandb_log(
-                        **{
-                            "train_loss": loss,
-                            "lr": self.optimizer.param_groups[0]["lr"],
-                        }
+                        **{"train_loss": loss, "lr": self.optimizer.param_groups[0]["lr"],}
                     )
             self.next_epoch()
 
@@ -120,33 +99,22 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 img[:, :, 66:] = np.rollaxis(generated_image, 2, 0)
                 self.wandb_log_image("L: true, R: generated", img)
                 self.wandb_log(
-                    **{
-                        "mu": mu[sampleid],
-                        "var": torch.exp(0.5 * log_var)[sampleid],
-                    }
+                    **{"mu": mu[sampleid], "var": torch.exp(0.5 * log_var)[sampleid],}
                 )
 
             else:
-                true_sample_path = os.path.join(
-                    self.experiment_directory,
-                    f"Logs/true-epoch{epoch}.jpg",
-                )
-                generated_sample_path = os.path.join(
-                    self.experiment_directory,
-                    f"Logs/generated-epoch{epoch}.jpg",
-                )
+                true_sample_path = os.path.join(self.experiment_directory, f"Logs/true-epoch{epoch}.jpg",)
+                generated_sample_path = os.path.join(self.experiment_directory, f"Logs/generated-epoch{epoch}.jpg",)
                 plt.imsave(true_sample_path, true_image)
                 plt.imsave(generated_sample_path, generated_image)
 
             # Checkpoint
             if epoch % self.get("checkpoint_every") == 0:
                 torch.save(
-                    self.model.state_dict(),
-                    open(f"{self.experiment_directory}/Weights/vae-{epoch}.pt", "wb"),
+                    self.model.state_dict(), open(f"{self.experiment_directory}/Weights/vae-{epoch}.pt", "wb"),
                 )
                 torch.save(
-                    self.model.encoder.state_dict(),
-                    open(f"{self.experiment_directory}/Weights/enc-{epoch}.pt", "wb"),
+                    self.model.encoder.state_dict(), open(f"{self.experiment_directory}/Weights/enc-{epoch}.pt", "wb"),
                 )
 
             # Run Validation
@@ -154,9 +122,7 @@ class TrainVAE(BaseExperiment, WandBSweepMixin, IOMixin):
                 self.model.eval()
 
                 for imgs, rollout_envs in tqdm(self.valid, "valid batches..."):
-                    imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(
-                        self.device
-                    )
+                    imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(self.device)
                     x_hat, mu, log_var = self.model(imgs)
                     valid_loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                     if self.get("use_wandb"):
