@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # C extensions
 *.so
@@ -112,6 +113,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+environment.yml
 
 # Spyder project settings
 .spyderproject
@@ -137,7 +139,28 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Image/video Data
+*.jpg
+*.jpeg
+*.png
+*.mov
+*.mp4
+*.gif
+
+# IDE-related files
+.vscode/
+*.code-workspace
 .idea/
+
+# osxfuse
+.fuse_hidden*
+
+# DS_Store
+*.DS_Store
+
+# Others
 experiments/
 *rollouts*
 *wandb
+*.pth.tar
+*.pt
