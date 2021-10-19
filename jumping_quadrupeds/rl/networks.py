@@ -27,7 +27,7 @@ class Actor(nn.Module):
 
 
 class CNNCategoricalActor(Actor):
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation=nn.ReLU):
+    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
         # [(W−K+2P)/S]+1
         self.logits_net = nn.Sequential(
@@ -67,7 +67,7 @@ class CNNGaussianActor(Actor):
         if len(obs.shape) == 3:
             obs.unsqueeze_(0)
         preactivations = self.encoder(obs)
-        mu = self.linear(torch.sigmoid(preactivations))
+        mu = torch.sigmoid(self.linear(preactivations))
         # re-scale mu[0] which is [-1, 1] turn angle
         mu_rescaled = torch.ones_like(mu)
         mu_rescaled[:, 0] = 2.0
@@ -133,26 +133,20 @@ class AbstractActorCritic(nn.Module):
 
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
-        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16, activation=nn.ReLU
+        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16
     ):
         super().__init__()
 
         channels = observation_space.shape[-1]
 
-        actor_encoder = WorldModelsConvEncoder(channels=channels, activation=activation)
-        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels=channels, activation=activation)
+        actor_encoder = WorldModelsConvEncoder(channels, nn.Tanh)
+        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels, nn.Tanh)
+        self.pi = CNNGaussianActor(
+            actor_encoder,
+            action_space.shape[0],
+            hidden_sizes,  # 4 * 4 square scaling factor for car-racing
+        )
 
-        # policy builder depends on action space
-        if isinstance(action_space, Box):
-            self.pi = CNNGaussianActor(
-                actor_encoder,
-                action_space.shape[0],
-                hidden_sizes,  # 4 * 4 square scaling factor for car-racing
-            )
-        elif isinstance(action_space, Discrete):
-            self.pi = CNNCategoricalActor(
-                channels, action_space.n, hidden_sizes
-            )
         # build value function
         self.v = CNNCritic(critic_encoder, hidden_sizes)
 
@@ -183,64 +177,3 @@ class ConvActorCritic(AbstractActorCritic):
     def get_value_params(self):
         return self.v.parameters()
 
-
-class MLPSharedActorCritic(AbstractActorCritic):
-    def __init__(
-        self, observation_space, action_space, hidden_sizes=(64, 64), activation=nn.Tanh
-    ):
-        super().__init__()
-
-        obs_dim = observation_space.shape[0]
-
-        self.shared_encoder = mlp([obs_dim] + list(hidden_sizes), activation)
-
-        # policy builder depends on action space
-        if isinstance(action_space, Box):
-            self._pi = MLPGaussianActor(
-                hidden_sizes[-1], action_space.shape[0], [], activation
-            )
-        elif isinstance(action_space, Discrete):
-            self._pi = MLPCategoricalActor(
-                hidden_sizes[-1], action_space.n, [], activation
-            )
-
-        # build value function
-        self._v = MLPCritic(hidden_sizes[-1], [], activation)
-
-    def step(self, obs):
-        with torch.no_grad():
-            obs_encoded = self.shared_encoder(obs)
-
-            pi = self._pi._distribution(obs_encoded)
-            a = pi.sample()
-            logp_a = self._pi._log_prob_from_distribution(pi, a)
-            v = self._v(obs_encoded)
-        return a.cpu().numpy(), v.cpu().numpy(), logp_a.cpu().numpy()
-
-    def pi(self, obs, act=None):
-        obs_encoded = self.shared_encoder(obs)
-        pi = self._pi._distribution(obs_encoded)
-        logp_a = None
-        if act is not None:
-            logp_a = self._pi._log_prob_from_distribution(pi, act)
-        return pi, logp_a
-
-    def v(self, obs):
-        obs_encoded = self.shared_encoder(obs)
-        return torch.squeeze(self._v.v_net(obs_encoded), -1)
-
-    def get_policy_params(self):
-        return list(self._pi.parameters()) + list(self.shared_encoder.parameters())
-
-    def get_value_params(self):
-        return list(self._v.parameters()) + list(self.shared_encoder.parameters())
-
-    def train(self, mode: bool = True):
-        self._pi.train(mode)
-        self._v.train(mode)
-        self.shared_encoder.train(mode)
-
-    def eval(self):
-        self._pi.eval()
-        self._v.eval()
-        self.shared_encoder.eval()

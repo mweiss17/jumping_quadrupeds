@@ -89,7 +89,6 @@ class PPO:
 
     def compute_loss_v(self, data):
         """Computes value loss"""
-
         obs, ret = data["obs"], data["ret"]
         return ((self.ac.v(obs) - ret) ** 2).mean()
 
