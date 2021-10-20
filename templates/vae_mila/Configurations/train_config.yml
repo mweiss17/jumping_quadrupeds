@@ -15,4 +15,4 @@ lr: 0.001
 scheduler_gamma: 0.95
 
 paths:
-  rollouts: "~/scratch-new/random-rollouts-50k"
+  rollouts: "~/scratch/random-rollouts-50k"
