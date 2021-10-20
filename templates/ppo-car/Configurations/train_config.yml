@@ -30,10 +30,10 @@ vf_lr: 1.0e-3
 
 # train_pi_iters (int): Maximum number of gradient descent steps to take on policy loss per epoch. (Early stopping
 #  may cause optimizer to take fewer than this.)
-train_pi_iters: 80
+train_pi_iters: 4
 
 # train_v_iters (int): Number of gradient descent steps to take on value function per epoch.
-train_v_iters: 80
+train_v_iters: 4
 
 # lam (float): Lambda for GAE-Lambda. (Always between 0 and 1, close to 1.)
 lam: 0.97

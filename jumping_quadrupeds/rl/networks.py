@@ -6,6 +6,7 @@ from torch.distributions import Categorical, Normal
 from torch.nn import functional as F
 from jumping_quadrupeds.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.rl.utils import mlp
+from jumping_quadrupeds.utils import layer_init
 
 
 class Actor(nn.Module):
@@ -60,14 +61,12 @@ class CNNGaussianActor(Actor):
         super().__init__()
         self.encoder = encoder
         self.linear = nn.Linear(64 * hidden_sizes, act_dim)
-        log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
+        log_std = -0.0 * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
 
     def _distribution(self, obs):
-        if len(obs.shape) == 3:
-            obs.unsqueeze_(0)
         preactivations = self.encoder(obs)
-        mu = torch.sigmoid(self.linear(preactivations))
+        mu = self.linear(torch.sigmoid(preactivations))
         # re-scale mu[0] which is [-1, 1] turn angle
         mu_rescaled = torch.ones_like(mu)
         mu_rescaled[:, 0] = 2.0
@@ -82,8 +81,6 @@ class CNNGaussianActor(Actor):
         return pi.log_prob(act)
 
 
-
-
 class CNNCritic(nn.Module):
     def __init__(self, encoder, hidden_sizes):
         super().__init__()
@@ -91,11 +88,9 @@ class CNNCritic(nn.Module):
         self.linear = nn.Linear(64 * hidden_sizes, 1)
 
     def forward(self, obs):
-        x = obs.float() / 255.0
-        if len(x.shape) == 3:
-            x.unsqueeze_(0)
+        # x = obs.float() / 255.0
         return torch.squeeze(
-            self.linear(self.encoder(x)), -1
+            self.linear(self.encoder(obs)), -1
         )  # Critical to ensure v has right shape.
 
 
@@ -139,8 +134,10 @@ class ConvActorCritic(AbstractActorCritic):
 
         channels = observation_space.shape[-1]
 
-        actor_encoder = WorldModelsConvEncoder(channels, nn.Tanh)
-        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels, nn.Tanh)
+        actor_encoder = WorldModelsConvEncoder(channels)
+        critic_encoder = (
+            actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
+        )
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space.shape[0],
@@ -176,4 +173,3 @@ class ConvActorCritic(AbstractActorCritic):
 
     def get_value_params(self):
         return self.v.parameters()
-

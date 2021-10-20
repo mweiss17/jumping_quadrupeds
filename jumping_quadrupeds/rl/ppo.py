@@ -2,7 +2,7 @@ from collections import deque
 
 import numpy as np
 import torch
-from torch.optim import Adam
+from torch.optim import Adam, SGD
 from tqdm import tqdm, trange
 
 from jumping_quadrupeds.rl.buffer import PpoBuffer
@@ -62,7 +62,6 @@ class PPO:
         """Computes policy loss"""
 
         obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
-
         # Policy loss
         pi, logp = self.ac.pi(obs, act)
         ratio = torch.exp(logp - logp_old)
@@ -98,11 +97,6 @@ class PPO:
         data = self.buf.get()
         self.buf.save(self.exp.experiment_directory)
 
-        ## this is only used for debugging - compute the old loss of policy and value function
-        pi_l_old, pi_info_old = self.compute_loss_pi(data)
-        pi_l_old = pi_l_old.item()
-        v_l_old = self.compute_loss_v(data).item()
-
         # Train policy with multiple steps of gradient descent
         if self._config.get("verbose"):
             tqdm.write("Training pi")
@@ -134,23 +128,21 @@ class PPO:
 
         if self.exp.get("use_wandb"):
 
-            sampleid = int(np.random.uniform(0, data["obs"].shape[0]))
-            self.exp.wandb_log_image("observation", data["obs"][sampleid])
+            action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
+            action_std = data["act"].detach().std(axis=0).cpu().numpy()
             self.exp.wandb_log(
                 **{
-                    "logp-turn": data["logp"][sampleid].detach().cpu().numpy()[0],
-                    "act-turn": data["act"][sampleid].detach().cpu().numpy()[0],
-                    "logp-gas": data["logp"][sampleid].detach().cpu().numpy()[1],
-                    "act-gas": data["act"][sampleid].detach().cpu().numpy()[1],
-                    "logp-brake": data["logp"][sampleid].detach().cpu().numpy()[2],
-                    "act-brake": data["act"][sampleid].detach().cpu().numpy()[2],
-                    "LossPi": pi_l_old,
-                    "LossV": v_l_old,
+                    "act-mean-turn": action_mean[0],
+                    "act-mean-gas": action_mean[1],
+                    "act-mean-brake": action_mean[2],
+                    "act-std-turn": action_std[0],
+                    "act-std-gas": action_std[1],
+                    "act-std-brake": action_std[2],
+                    "LossPi": loss_pi.item(),
+                    "LossV": loss_v.item(),
                     "KL": kl,
                     "Entropy": np.mean(pi_info["ent"]),
                     "ClipFrac": np.mean(pi_info["cf"]),
-                    "DeltaLossPi": (loss_pi.item() - pi_l_old),
-                    "DeltaLossV": (loss_v.item() - v_l_old),
                 }
             )
 
@@ -234,7 +226,6 @@ class PPO:
         """Fill up the replay buffer with fresh rollouts based on the current policy"""
 
         if self.obs is None:
-
             self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
         episode_counter = 0
 
@@ -246,11 +237,14 @@ class PPO:
 
         for t in trange(self._config.get("steps_per_epoch")):
             obs = torch.as_tensor(self.obs.copy(), dtype=torch.float32).to(self.device)
-
+            # if self.total_steps > 20000:
+            #     breakpoint()
             self.act, self.val, self.logp = self.ac.step(obs)
+
             self.next_obs, self.rew, self.done, misc = self.env.step(self.act)
 
             self.total_steps += 1
+            self.exp.next_step()
             self.ep_ret += self.rew
             self.ep_len += 1
 
@@ -295,7 +289,7 @@ class PPO:
                         self.exp.wandb_log(
                             **{
                                 "Episode mean reward": np.mean(self.ep_rew_mean),
-                                "Env Steps": self.total_steps,
+                                "Episode return": self.ep_ret,
                                 "Episode mean length": np.mean(self.ep_len_mean),
                                 "Number of Episodes": self.total_episodes,
                             }
