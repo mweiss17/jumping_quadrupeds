@@ -82,14 +82,15 @@ class PPO:
             1 - self._config.get("clip_ratio")
         )
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv)
 
         return loss_pi, pi_info
 
     def compute_loss_v(self, data):
         """Computes value loss"""
         obs, ret = data["obs"], data["ret"]
-        return ((self.ac.v(obs) - ret) ** 2).mean()
+        value_estimate = self.ac.v(obs)
+        return value_estimate, ((value_estimate - ret) ** 2).mean()
 
     def update(self):
         """Updates the policy and value function based on the latest replay buffer"""
@@ -102,61 +103,60 @@ class PPO:
             tqdm.write("Training pi")
 
         self.ac.train()
-
+        pi_losses = []
+        pi_infos = []
         for i in range(self._config.get("train_pi_iters")):
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(data)
             kl = np.mean(pi_info["kl"])
             if kl > 1.5 * self._config.get("target_kl"):
-                if self._config.get("verbose"):
-                    tqdm.write(
-                        f"Early stopping at step {i}/{self._config.get('train_pi_iters')} due to reaching max kl."
-                    )
+                tqdm.write(
+                    f"Early stopping at step {i}/{self._config.get('train_pi_iters')} due to reaching max kl."
+                )
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
-
-        # Value function learning
-        if self._config.get("verbose"):
-            tqdm.write("Training Val")
+            pi_losses.append(loss_pi.detach().item())
+            pi_infos.append(pi_info)
 
         for i in range(self._config.get("train_v_iters")):
             self.vf_optimizer.zero_grad()
-            loss_v = self.compute_loss_v(data)
+            value_estimate, loss_v = self.compute_loss_v(data)
             loss_v.backward()
             self.vf_optimizer.step()
 
         if self.exp.get("use_wandb"):
-
             action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
             action_std = data["act"].detach().std(axis=0).cpu().numpy()
+            logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
+            adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
+            adv_std = pi_info["adv"].detach().std().cpu().numpy()
+            ratio_mean = pi_info["ratio"].detach().std().cpu().numpy()
+            ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
             self.exp.wandb_log(
                 **{
                     "act-mean-turn": action_mean[0],
                     "act-mean-gas": action_mean[1],
                     "act-mean-brake": action_mean[2],
+                    "log-p-turn": logp_mean[0],
+                    "log-p-gas": logp_mean[1],
+                    "log-p-brake": logp_mean[2],
                     "act-std-turn": action_std[0],
                     "act-std-gas": action_std[1],
                     "act-std-brake": action_std[2],
-                    "LossPi": loss_pi.item(),
-                    "LossV": loss_v.item(),
+                    "loss-pi": pi_losses,
+                    "loss-v": loss_v.item(),
+                    "value-estimate": value_estimate.detach().mean().cpu().numpy(),
+                    "true-return": data["ret"].detach().mean().cpu().numpy(),
                     "KL": kl,
-                    "Entropy": np.mean(pi_info["ent"]),
-                    "ClipFrac": np.mean(pi_info["cf"]),
+                    "entropy": np.mean(pi_info["ent"]),
+                    "clip-frac": np.mean(pi_info["cf"]),
+                    "adv-mean": adv_mean,
+                    "adv-std": adv_std,
+                    "ratio-mean": ratio_mean,
+                    "ratio-std": ratio_std,
                 }
             )
-
-        ## Log changes from update
-        # kl, ent, cf = pi_info["kl"], pi_info_old["ent"], pi_info["cf"]
-        # logger.store(
-        #     LossPi=pi_l_old,
-        #     LossV=v_l_old,
-        #     KL=kl,
-        #     Entropy=ent,
-        #     ClipFrac=cf,
-        #     DeltaLossPi=(loss_pi.item() - pi_l_old),
-        #     DeltaLossV=(loss_v.item() - v_l_old),
-        # )
 
     def save_checkpoint(self, epoch):
         torch.save(

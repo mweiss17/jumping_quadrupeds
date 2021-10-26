@@ -44,7 +44,7 @@ max_ep_len: 1000
 
 # target_kl (float): Roughly what KL divergence we think is appropriate between new and old policies after an
 #  update. This will get used for early stopping. (Usually small, 0.01 or 0.05.)
-target_kl: 0.01
+target_kl: 0.05
 
 # save_freq (int): save policy every n epochs
 save_freq: 10
