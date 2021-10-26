@@ -34,7 +34,7 @@ class TrainPPOConv(
             render_mode=False,
             full_ep=False,
         )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
         ac = ConvActorCritic(

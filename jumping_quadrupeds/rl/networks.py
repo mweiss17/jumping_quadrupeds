@@ -61,20 +61,16 @@ class CNNGaussianActor(Actor):
         super().__init__()
         self.encoder = encoder
         self.linear = nn.Linear(64 * hidden_sizes, act_dim)
-        log_std = -0.0 * np.ones(act_dim, dtype=np.float32)
+        log_std = -.5 * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
+        self.action_min = torch.tensor([-1., 0., 0.], requires_grad=False)
+        self.action_max = torch.tensor([1., 1., 1.], requires_grad=False)
 
     def _distribution(self, obs):
         preactivations = self.encoder(obs)
-        mu = self.linear(torch.sigmoid(preactivations))
-        # re-scale mu[0] which is [-1, 1] turn angle
-        mu_rescaled = torch.ones_like(mu)
-        mu_rescaled[:, 0] = 2.0
-        mu_translate = torch.zeros_like(mu)
-        mu_translate[:, 0] = 1.0
-        mu = mu_rescaled * mu - mu_translate
+        mu = torch.tanh(self.linear(preactivations))
+        mu = self.action_min + ((mu + 1) / torch.tensor([2])) * (self.action_max - self.action_min)
         std = torch.exp(self.log_std)
-
         return Normal(mu, std)
 
     def _log_prob_from_distribution(self, pi, act):
