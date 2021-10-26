@@ -128,11 +128,11 @@ class PPO:
         if self.exp.get("use_wandb"):
             action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
             action_std = data["act"].detach().std(axis=0).cpu().numpy()
-            logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
-            adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
-            adv_std = pi_info["adv"].detach().std().cpu().numpy()
-            ratio_mean = pi_info["ratio"].detach().std().cpu().numpy()
-            ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
+            logp_mean = [pi_info["logp"].detach().mean(axis=0).cpu().numpy() for pi_info in pi_infos]
+            adv_mean = [pi_info["adv"].detach().mean().cpu().numpy() for pi_info in pi_infos]
+            adv_std = [pi_info["adv"].detach().std().cpu().numpy() for pi_info in pi_infos]
+            ratio_mean = [pi_info["ratio"].detach().mean().cpu().numpy() for pi_info in pi_infos]
+            ratio_std = [pi_info["ratio"].detach().std().cpu().numpy() for pi_info in pi_infos]
             self.exp.wandb_log(
                 **{
                     "act-mean-turn": action_mean[0],
@@ -144,7 +144,7 @@ class PPO:
                     "act-std-turn": action_std[0],
                     "act-std-gas": action_std[1],
                     "act-std-brake": action_std[2],
-                    "loss-pi": pi_losses,
+                    "loss-pi": np.abs(np.array(pi_losses)).sum(),
                     "loss-v": loss_v.item(),
                     "value-estimate": value_estimate.detach().mean().cpu().numpy(),
                     "true-return": data["ret"].detach().mean().cpu().numpy(),

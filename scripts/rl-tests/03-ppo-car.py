@@ -54,9 +54,9 @@ class TrainPPOConv(
         # Put on device
         ac = ac.to(device)
 
-        # if self.get("use_wandb"):
-        #     self.wandb_watch(ac.pi, log_freq=1)
-        #     self.wandb_watch(ac.v, log_freq=1)
+        if self.get("use_wandb"):
+            self.wandb_watch(ac.pi, log_freq=1)
+            self.wandb_watch(ac.v, log_freq=1)
 
         # buffer
         buf = PpoBuffer(
