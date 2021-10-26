@@ -126,7 +126,6 @@ class PPO:
             self.vf_optimizer.step()
 
         if self.exp.get("use_wandb"):
-            breakpoint()
             action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
             action_std = data["act"].detach().std(axis=0).cpu().numpy()
             logp_mean = [pi_info["logp"].detach().mean(axis=0).cpu().numpy() for pi_info in pi_infos]
