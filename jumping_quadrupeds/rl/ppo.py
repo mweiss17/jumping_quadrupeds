@@ -103,14 +103,10 @@ class PPO:
             tqdm.write("Training pi")
 
         self.ac.train()
-        pi_losses = []
-        pi_infos = []
         for i in range(self._config.get("train_pi_iters")):
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(data)
             kl = np.mean(pi_info["kl"])
-            pi_losses.append(loss_pi.detach().item())
-            pi_infos.append(pi_info)
             if kl > 1.5 * self._config.get("target_kl"):
                 tqdm.write(
                     f"Early stopping at step {i}/{self._config.get('train_pi_iters')} due to reaching max kl."
@@ -128,11 +124,11 @@ class PPO:
         if self.exp.get("use_wandb"):
             action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
             action_std = data["act"].detach().std(axis=0).cpu().numpy()
-            logp_mean = [pi_info["logp"].detach().mean(axis=0).cpu().numpy() for pi_info in pi_infos]
-            adv_mean = [pi_info["adv"].detach().mean().cpu().numpy() for pi_info in pi_infos]
-            adv_std = [pi_info["adv"].detach().std().cpu().numpy() for pi_info in pi_infos]
-            ratio_mean = [pi_info["ratio"].detach().mean().cpu().numpy() for pi_info in pi_infos]
-            ratio_std = [pi_info["ratio"].detach().std().cpu().numpy() for pi_info in pi_infos]
+            logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
+            adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
+            adv_std = pi_info["adv"].detach().std().cpu().numpy()
+            ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
+            ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
             self.exp.wandb_log(
                 **{
                     "act-mean-turn": action_mean[0],
@@ -144,7 +140,7 @@ class PPO:
                     "act-std-turn": action_std[0],
                     "act-std-gas": action_std[1],
                     "act-std-brake": action_std[2],
-                    "loss-pi": np.abs(np.array(pi_losses)).sum(),
+                    "loss-pi": loss_pi.detach().item(),
                     "loss-v": loss_v.item(),
                     "value-estimate": value_estimate.detach().mean().cpu().numpy(),
                     "true-return": data["ret"].detach().mean().cpu().numpy(),
