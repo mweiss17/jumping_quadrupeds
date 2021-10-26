@@ -57,11 +57,11 @@ class CNNCategoricalActor(Actor):
 
 
 class CNNGaussianActor(Actor):
-    def __init__(self, encoder, act_dim, hidden_sizes):
+    def __init__(self, encoder, act_dim, hidden_sizes, log_std):
         super().__init__()
         self.encoder = encoder
         self.linear = nn.Linear(64 * hidden_sizes, act_dim)
-        log_std = -.5 * np.ones(act_dim, dtype=np.float32)
+        log_std = -log_std * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
         self.action_min = torch.tensor([-1., 0., 0.], requires_grad=False)
         self.action_max = torch.tensor([1., 1., 1.], requires_grad=False)
@@ -69,7 +69,7 @@ class CNNGaussianActor(Actor):
     def _distribution(self, obs):
         preactivations = self.encoder(obs)
         mu = torch.tanh(self.linear(preactivations))
-        mu = self.action_min + ((mu + 1) / torch.tensor([2])) * (self.action_max - self.action_min)
+        mu = self.action_min + ((mu + 1) / 2) * (self.action_max - self.action_min)
         std = torch.exp(self.log_std)
         return Normal(mu, std)
 
@@ -124,7 +124,7 @@ class AbstractActorCritic(nn.Module):
 
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
-        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16
+        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16, log_std=0.5
     ):
         super().__init__()
 
@@ -138,6 +138,7 @@ class ConvActorCritic(AbstractActorCritic):
             actor_encoder,
             action_space.shape[0],
             hidden_sizes,  # 4 * 4 square scaling factor for car-racing
+            log_std,
         )
 
         # build value function

@@ -41,6 +41,7 @@ class TrainPPOConv(
             env.observation_space,
             env.action_space,
             shared_encoder=self.get("shared_encoder", False),
+            log_std=self.get("log_std")
         )
 
         if self.get("vae_enc_checkpoint"):

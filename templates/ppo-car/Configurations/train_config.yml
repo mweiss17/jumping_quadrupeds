@@ -60,6 +60,7 @@ seed: 1
 
 use_wandb: True
 
+log_std: 0.5
 #save_transitions: 500000
 
 # in case you want to start from  a checkpoint, set these variables (or pass them through command line)
