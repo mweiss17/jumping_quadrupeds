@@ -109,6 +109,8 @@ class PPO:
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(data)
             kl = np.mean(pi_info["kl"])
+            pi_losses.append(loss_pi.detach().item())
+            pi_infos.append(pi_info)
             if kl > 1.5 * self._config.get("target_kl"):
                 tqdm.write(
                     f"Early stopping at step {i}/{self._config.get('train_pi_iters')} due to reaching max kl."
@@ -116,8 +118,6 @@ class PPO:
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
-            pi_losses.append(loss_pi.detach().item())
-            pi_infos.append(pi_info)
 
         for i in range(self._config.get("train_v_iters")):
             self.vf_optimizer.zero_grad()
@@ -126,6 +126,7 @@ class PPO:
             self.vf_optimizer.step()
 
         if self.exp.get("use_wandb"):
+            breakpoint()
             action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
             action_std = data["act"].detach().std(axis=0).cpu().numpy()
             logp_mean = [pi_info["logp"].detach().mean(axis=0).cpu().numpy() for pi_info in pi_infos]
