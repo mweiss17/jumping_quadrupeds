@@ -43,18 +43,6 @@ class EthLstm(nn.Module):
             self.ht.append([None, ] * self.seq_len)
             self.ct.append([None, ] * self.seq_len)
 
-    # def init_hidden(self, device):
-    #     self.h0 =
-    #     self
-    #     self.ht = []
-    #     self.ct = []
-    #     for layer_idx in range(self.lstm_layers):
-    #         ht = torch.zeros(self.seq_len, self.batch_size, self.output_dims[layer_idx]).to(device)
-    #         ct = torch.zeros(self.seq_len, self.batch_size, self.output_dims[layer_idx]).to(device)
-    #         # torch.nn.init.xavier_normal_(ht, gain=1.0)
-    #         # torch.nn.init.xavier_normal_(ct, gain=1.0)
-    #         self.ht.append(ht)
-    #         self.ct.append(ct)
 
     def forward(self, vae_latent, frame_idx, displacement=None):
         # in theory, we should concatenate the movement info/odometry here
@@ -63,7 +51,6 @@ class EthLstm(nn.Module):
         x = vae_latent
 
         # step the LSTM layers
-
         for layer_idx, l in enumerate(self.lstms):
             input = x if layer_idx == 0 else self.ht[layer_idx - 1][frame_idx]
             if frame_idx == 0:
@@ -72,11 +59,10 @@ class EthLstm(nn.Module):
                 self.ht[layer_idx][frame_idx], self.ct[layer_idx][frame_idx] = l(input, (self.ht[layer_idx][frame_idx - 1], self.ct[layer_idx][frame_idx - 1]))
 
         last_idx = len(self.lstms) - 1
-        h_next = self.ht[last_idx][frame_idx]
-        mu = self.mu_net(h_next)
-        logsigma = self.sigma_net(h_next)
+        mu = self.mu_net(self.ht[last_idx][frame_idx])
+        logsigma = self.sigma_net(self.ht[last_idx][frame_idx])
 
-        return mu, logsigma, h_next
+        return mu, logsigma, self.ht[last_idx][frame_idx]
 
     def loss(self, mu, logsigma, h_next, l_next_gt):
         # make mu/sigma into distribution
@@ -89,4 +75,4 @@ class EthLstm(nn.Module):
         sample = Normal(0, 1).sample([self.output_size])  # comparing to a unit gaussian
         kl = F.kl_div(norm.log_prob(h_next), sample, reduce="batchmean").mean()
 
-        return {"l2": kl, "kl": kl, "loss":  kl}
+        return {"l2": kl, "kl": kl, "loss": kl + l2}
