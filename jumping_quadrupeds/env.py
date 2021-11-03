@@ -14,7 +14,6 @@ SCREEN_Y = 64
 def _process_frame(frame):
     obs = np.array(Image.fromarray(np.rollaxis(frame, 0, 2)).resize((64, 64)))
     obs = obs.astype(np.float32) / 255.0
-    # obs = ((1.0 - obs) * 255).round().astype(np.uint8)
     obs = np.expand_dims(obs, 0)
     obs = np.transpose(obs, (0, 3, 2, 1))
     return obs
