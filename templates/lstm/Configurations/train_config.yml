@@ -1,6 +1,6 @@
 #checkpoint_every: 1
 dataloader:
-  batch_size: 2
+  batch_size: 10
   num_workers: 0
   shuffle: 'True'
 #git_rev: ff7a0d50f5634b7cda393161db079e32dd21d1db
@@ -8,14 +8,19 @@ dataloader:
 #max_num_samples: 1000
 #num_epochs: 100
 paths:
-  rollouts: ../../scripts/eth-paper/random-rollouts-50k/rollouts_e256_t200.hdf5
-  vae_weights: ../../experiments/train-vae-enc/Weights/vae-0.pt
+  rollouts: random-rollouts-50k/rollouts_e256_t200.hdf5
+  vae_weights: experiments/vae/Weights/vae-20.pt
 use_wandb: 'False'
 #valid_every: 1
 vae:
   latent: 32
-num_epochs: 50
-lr: 0.0001
 
 lstm:
-  backprop_after: 20 # should be a multiple of the dataset len
+  input_size: 32
+  output_size: 32
+  lstm_layers: 2
+  lstm_size: 128
+
+num_epochs: 100
+lr: 0.001
+

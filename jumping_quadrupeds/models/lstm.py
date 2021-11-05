@@ -6,7 +6,15 @@ import torch.nn.functional as F
 
 
 class EthLstm(nn.Module):
-    def __init__(self, lstm_layers=2, seq_len=200, batch_size=2, lstm_size=128, input_size=32, output_size=32):
+    def __init__(
+        self,
+        lstm_layers=2,
+        seq_len=200,
+        batch_size=2,
+        lstm_size=128,
+        input_size=32,
+        output_size=16,
+    ):
         super().__init__()
         self.output_size = output_size
         self.lstm_layers = lstm_layers
@@ -18,61 +26,80 @@ class EthLstm(nn.Module):
         self.output_dims = []
         for l in range(self.lstm_layers):
             input_dim = self.input_size if l == 0 else self.lstm_size
-            output_dim = self.output_size if l == self.lstm_layers - 1 else self.lstm_size
+            output_dim = (
+                self.output_size if l == self.lstm_layers - 1 else self.lstm_size
+            )
             self.output_dims.append(output_dim)
             self.lstms.append(nn.LSTMCell(input_dim, output_dim))
 
         self.mu_net = nn.Linear(output_size, output_size)
         self.sigma_net = nn.Linear(output_size, output_size)
 
-        self.loss_func = nn.MSELoss()  # not sure about this # FIXME
-
-    def init_hidden(self, device):
+    def init_hidden(self, batch_size, device):
         self.ht = []
         self.ct = []
 
         self.h = []
         self.c = []
         for layer_idx in range(self.lstm_layers):
-            h = torch.zeros((self.batch_size, self.output_dims[layer_idx]))
-            c = torch.zeros((self.batch_size, self.output_dims[layer_idx]))
+            h = torch.zeros((batch_size, self.output_dims[layer_idx]))
+            c = torch.zeros((batch_size, self.output_dims[layer_idx]))
             torch.nn.init.xavier_normal_(h, gain=1.0)
             torch.nn.init.xavier_normal_(c, gain=1.0)
-            self.h.append(h)
-            self.c.append(c)
-            self.ht.append([None, ] * self.seq_len)
-            self.ct.append([None, ] * self.seq_len)
-
+            self.h.append(h.to(device))
+            self.c.append(c.to(device))
+            self.ht.append(
+                [
+                    None,
+                ]
+                * self.seq_len
+            )
+            self.ct.append(
+                [
+                    None,
+                ]
+                * self.seq_len
+            )
 
     def forward(self, vae_latent, frame_idx, displacement=None):
         # in theory, we should concatenate the movement info/odometry here
         # x = cat(vae_latent, displacement)
-        # FIXME
         x = vae_latent
 
         # step the LSTM layers
         for layer_idx, l in enumerate(self.lstms):
             input = x if layer_idx == 0 else self.ht[layer_idx - 1][frame_idx]
             if frame_idx == 0:
-                self.ht[layer_idx][frame_idx], self.ct[layer_idx][frame_idx] = l(input, (self.h[layer_idx], self.c[layer_idx]))
+                self.ht[layer_idx][frame_idx], self.ct[layer_idx][frame_idx] = l(
+                    input, (self.h[layer_idx], self.c[layer_idx])
+                )
             else:
-                self.ht[layer_idx][frame_idx], self.ct[layer_idx][frame_idx] = l(input, (self.ht[layer_idx][frame_idx - 1], self.ct[layer_idx][frame_idx - 1]))
+                self.ht[layer_idx][frame_idx], self.ct[layer_idx][frame_idx] = l(
+                    input,
+                    (
+                        self.ht[layer_idx][frame_idx - 1],
+                        self.ct[layer_idx][frame_idx - 1],
+                    ),
+                )
 
-        last_idx = len(self.lstms) - 1
-        mu = self.mu_net(self.ht[last_idx][frame_idx])
-        logsigma = self.sigma_net(self.ht[last_idx][frame_idx])
+        lstm_mu = self.mu_net(self.ht[self.lstm_layers - 1][frame_idx])
+        lstm_log_sigma = self.sigma_net(self.ht[self.lstm_layers - 1][frame_idx])
 
-        return mu, logsigma, self.ht[last_idx][frame_idx]
+        return {
+            "lstm_mu": lstm_mu,
+            "lstm_log_sigma": lstm_log_sigma,
+            "vae_latent": vae_latent,
+        }
 
-    def loss(self, mu, logsigma, h_next, l_next_gt):
+    def loss(self, lstm_mu, lstm_log_sigma, vae_latent):
         # make mu/sigma into distribution
-        sigma = logsigma.exp()
-        norm = Normal(mu, sigma)
-        l_next = norm.rsample()  # reparameterization trick
+        lstm_normal = Normal(lstm_mu, lstm_log_sigma.exp())
+        sampled_next_latent = lstm_normal.rsample()  # reparameterization trick
 
-        l2 = self.loss_func(l_next, l_next_gt)
+        l2 = F.mse_loss(sampled_next_latent, vae_latent, size_average=False)
 
-        sample = Normal(0, 1).sample([self.output_size])  # comparing to a unit gaussian
-        kl = F.kl_div(norm.log_prob(h_next), sample, reduce="batchmean").mean()
+        kl = -0.5 * torch.sum(
+            1 + 2 * lstm_log_sigma - lstm_mu.pow(2) - (2 * lstm_log_sigma).exp()
+        )
 
-        return {"l2": kl, "kl": kl, "loss": kl + l2}
+        return {"l2": l2, "kl": kl, "loss": kl + l2}
