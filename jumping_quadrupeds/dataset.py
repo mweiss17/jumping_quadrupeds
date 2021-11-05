@@ -21,7 +21,9 @@ class Box2dRollout(ImageFolder):
 
         See :class:`DatasetFolder` for details.
         """
-        classes = sorted(entry.name for entry in os.scandir(directory) if entry.is_dir())
+        classes = sorted(
+            entry.name for entry in os.scandir(directory) if entry.is_dir()
+        )
         if not classes:
             raise FileNotFoundError(f"Couldn't find any class folder in {directory}.")
 
@@ -61,6 +63,7 @@ class Hdf5ImgSeqDataset(Hdf5ImgDataset):
         if not hasattr(self, "file_handle"):
             self.open_ds()
         imgs = self.dataset[index]
+
         out = []
         for img in imgs:
             img = Image.fromarray(img)

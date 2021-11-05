@@ -46,7 +46,9 @@ def data_generator(seed):
 
 #
 num_todo = num_episodes * max_timesteps_per_episode
-simulators = [mp.Process(target=data_generator, args=(seed,)) for seed in range(num_processes)]
+simulators = [
+    mp.Process(target=data_generator, args=(seed,)) for seed in range(num_processes)
+]
 for s in simulators:
     s.start()
 
@@ -66,10 +68,12 @@ states = f.create_dataset(
     shuffle=True,
 )
 for episode in trange(num_episodes):
-    episode_buffer = np.zeros((max_timesteps_per_episode, 96, 96, 3), np.uint8)  # to reduce i/o
+    episode_buffer = np.zeros(
+        (max_timesteps_per_episode, 96, 96, 3), np.uint8
+    )  # to reduce i/o
     for step in range(max_timesteps_per_episode):
         im = plt.imread(os.path.join(output_path, "raw", f"{episode}", f"{step}.png"))
-        episode_buffer[step] = np.copy(im)
+        episode_buffer[step] = np.copy(im) * 255
     states[episode] = episode_buffer
 
 f.flush()

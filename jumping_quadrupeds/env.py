@@ -7,33 +7,6 @@ from gym.spaces.box import Box
 from gym.envs.box2d.car_racing import CarRacing
 
 
-SCREEN_X = 64
-SCREEN_Y = 64
-
-
-def _process_frame(frame):
-    obs = np.array(Image.fromarray(np.rollaxis(frame, 0, 2)).resize((64, 64)))
-    obs = obs.astype(np.float32) / 255.0
-    obs = np.expand_dims(obs, 0)
-    obs = np.transpose(obs, (0, 3, 2, 1))
-    return obs
-
-
-class CarRacingWrapper(CarRacing):
-    def __init__(self, full_ep=False):
-        super(CarRacingWrapper, self).__init__()
-        self.full_episode = full_ep
-        self.observation_space = Box(
-            low=0, high=1, shape=(SCREEN_X, SCREEN_Y, 3)
-        )  # , dtype=np.uint8
-
-    def step(self, action):
-        obs, reward, done, _ = super(CarRacingWrapper, self).step(action)
-        if self.full_episode:
-            return _process_frame(obs), reward, False, {}
-        return _process_frame(obs), reward, done, {}
-
-
 class VideoWrapper(gym.Wrapper):
     """Gathers up the frames from an episode and allows to upload them to Weights & Biases
     Thanks to @cyrilibrahim for this snippet
@@ -84,8 +57,10 @@ class VideoWrapper(gym.Wrapper):
         self.last_frames = None
 
 
-def make_env(env_name, seed=-1, render_mode=False, full_ep=False, render_every=25):
-    env = VideoWrapper(CarRacingWrapper(full_ep=full_ep), update_freq=render_every)
+def make_env(env_name, seed=-1, render_every=25):
+    if env_name == "CarRacing-v0":
+        env = CarRacing()
+    env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)
     """

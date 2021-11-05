@@ -8,10 +8,10 @@ from tqdm import trange, tqdm
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-from jumping_quadrupeds.models.dataset import Hdf5ImgSeqDataset
+from jumping_quadrupeds.dataset import Hdf5ImgSeqDataset
 from jumping_quadrupeds.models.lstm import EthLstm
 from jumping_quadrupeds.models.vae import ConvVAE
-from jumping_quadrupeds.encoders import WorldModelsConvEncoder, FlosConvEncoder
+from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder, FlosConvEncoder
 from jumping_quadrupeds.utils import common_img_transforms, abs_path
 
 
@@ -35,11 +35,9 @@ class TrainLSTM(WandBMixin, IOMixin, BaseExperiment):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # load dataset
-        ds_path = abs_path(self.get("paths/rollouts"))
         ds = Hdf5ImgSeqDataset(
-            ds_path, self.transforms["train"]
+            abs_path(self.get("paths/rollouts")), self.transforms["train"]
         )  # FIXME: this applies training transforms to both
-
         # TODO: cut down sequence length - make 4 segments of 50 frames each or summin like that
         split = int(len(ds) * 0.8)
         ds_train_raw, ds_valid_raw = torch.utils.data.random_split(
@@ -55,17 +53,15 @@ class TrainLSTM(WandBMixin, IOMixin, BaseExperiment):
             encoder = FlosConvEncoder(img_channels)
         else:
             encoder = WorldModelsConvEncoder(img_channels)
+
         self.vae = ConvVAE(
             encoder, img_channels=img_channels, latent_size=self.get("vae/latent")
         ).to(self.device)
 
-        # load VAE weights
         self.vae.load_state_dict(
             torch.load(self.get("paths/vae_weights"), map_location=self.device)["model"]
         )
-        self.vae.eval()
 
-        # load LSTM
         self.lstm = EthLstm(**self.get("lstm")).to(self.device)
 
         # optimizer
@@ -145,34 +141,45 @@ class TrainLSTM(WandBMixin, IOMixin, BaseExperiment):
                 self.lstm.init_hidden(batch.size()[0], self.device)
 
                 state = self.step_model(batch, train=False)
-                self.reconstruct_latents(batch, state["latents"])
+            self.reconstruct_latents(batch, state["latents"])
+            self.reconstruct_latents(batch, state["latents"], frame_idx=100)
 
-    def reconstruct_latents(self, gt, latents):
+    def reconstruct_latents(self, gt, latents, frame_idx=0):
         lstm_latent = torch.cat(
             [
-                latents[0]["lstm_mu"],
-                latents[0]["lstm_log_sigma"],
+                latents[frame_idx]["lstm_mu"],
+                latents[frame_idx]["lstm_log_sigma"],
             ],
             dim=1,
         )
         self.write_sample(
-            gt[0][0],
-            latents[0]["vae_latent"],
+            gt[0][frame_idx],
+            latents[frame_idx]["vae_latent"],
             lstm_latent,
+            frame_idx,
         )
 
-    def write_sample(self, gt, vae_latent, lstm_latent):
+    def write_sample(self, gt, vae_latent, lstm_latent, frame_idx):
         with torch.no_grad():
             plt.imsave(
-                os.path.join(self.experiment_directory, f"Logs/gt-{self.step}.png"),
+                os.path.join(
+                    self.experiment_directory,
+                    f"Logs/gt-frame-{frame_idx}-step-{self.step}.png",
+                ),
                 gt.moveaxis(0, 2).cpu().numpy(),
             )
             plt.imsave(
-                os.path.join(self.experiment_directory, f"Logs/vae-{self.step}.png"),
+                os.path.join(
+                    self.experiment_directory,
+                    f"Logs/vae-frame-{frame_idx}-step-{self.step}.png",
+                ),
                 self.vae.decoder(vae_latent)[0].cpu().moveaxis(0, 2).numpy(),
             )
             plt.imsave(
-                os.path.join(self.experiment_directory, f"Logs/lstm-{self.step}.png"),
+                os.path.join(
+                    self.experiment_directory,
+                    f"Logs/lstm-frame-{frame_idx}-step-{self.step}.png",
+                ),
                 self.vae.decoder(lstm_latent)[0].cpu().moveaxis(0, 2).numpy(),
             )
 

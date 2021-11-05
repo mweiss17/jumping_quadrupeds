@@ -15,8 +15,8 @@ from jumping_quadrupeds.utils import common_img_transforms
 sys.path.append(os.getcwd())
 
 from jumping_quadrupeds.models.vae import ConvVAE
-from jumping_quadrupeds.encoders import WorldModelsConvEncoder, FlosConvEncoder
-from jumping_quadrupeds.models.dataset import Box2dRollout, MySubset
+from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder, FlosConvEncoder
+from jumping_quadrupeds.dataset import Box2dRollout, MySubset
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun
 from speedrun import (
@@ -45,15 +45,22 @@ class TrainVAE(
         if self.get("use_wandb"):
             self.initialize_wandb()
 
-        self.transforms = {"train": common_img_transforms(with_flip=True), "valid": common_img_transforms()}
+        self.transforms = {
+            "train": common_img_transforms(with_flip=True),
+            "valid": common_img_transforms(),
+        }
 
         # Dataset
-        dataset_path = os.path.abspath(os.path.expanduser(os.path.expandvars(self.get("paths/rollouts"))))
+        dataset_path = os.path.abspath(
+            os.path.expanduser(os.path.expandvars(self.get("paths/rollouts")))
+        )
         dataset = Box2dRollout(dataset_path)
 
         # Split dataset into train and validation splits
         split_idx = len(dataset) // 8
-        self.valid, self.train = torch.utils.data.random_split(dataset, [split_idx, len(dataset) - split_idx])
+        self.valid, self.train = torch.utils.data.random_split(
+            dataset, [split_idx, len(dataset) - split_idx]
+        )
         self.train = MySubset(self.train, self.transforms["train"])
         self.valid = MySubset(self.valid, self.transforms["valid"])
 
@@ -70,7 +77,9 @@ class TrainVAE(
         self.model.to(self.device)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, "min", factor=0.5, patience=5)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, "min", factor=0.5, patience=5
+        )
 
     def plot_samples(self, true_image, generated_image):
         if self.get("use_wandb"):
@@ -105,7 +114,10 @@ class TrainVAE(
                 self.next_step()
                 if self.get("use_wandb"):
                     self.wandb_log(
-                        **{"train_loss": loss, "lr": self.optimizer.param_groups[0]["lr"],}
+                        **{
+                            "train_loss": loss,
+                            "lr": self.optimizer.param_groups[0]["lr"],
+                        }
                     )
 
             self.next_epoch()
@@ -122,9 +134,11 @@ class TrainVAE(
 
                 # record latent variables for this sample
                 self.wandb_log(
-                    **{"mu": mu[sampleid], "var": torch.exp(0.5 * log_var)[sampleid],}
+                    **{
+                        "mu": mu[sampleid],
+                        "var": torch.exp(0.5 * log_var)[sampleid],
+                    }
                 )
-
 
             self.checkpoint_if_required()
 
@@ -133,7 +147,9 @@ class TrainVAE(
                 self.model.eval()
 
                 for imgs, rollout_envs in tqdm(self.valid, "valid batches..."):
-                    imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(self.device)
+                    imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(
+                        self.device
+                    )
                     x_hat, mu, log_var = self.model(imgs)
                     valid_loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                     if self.get("use_wandb"):

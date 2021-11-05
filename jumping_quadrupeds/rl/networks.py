@@ -4,7 +4,7 @@ from gym.spaces import Box, Discrete
 from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.nn import functional as F
-from jumping_quadrupeds.encoders import WorldModelsConvEncoder
+from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.rl.utils import mlp
 from jumping_quadrupeds.utils import layer_init
 
@@ -63,8 +63,8 @@ class CNNGaussianActor(Actor):
         self.linear = nn.Linear(64 * hidden_sizes, act_dim)
         log_std = -log_std * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
-        self.action_min = torch.tensor([-1., 0., 0.], requires_grad=False)
-        self.action_max = torch.tensor([1., 1., 1.], requires_grad=False)
+        self.action_min = torch.tensor([-1.0, 0.0, 0.0], requires_grad=False)
+        self.action_max = torch.tensor([1.0, 1.0, 1.0], requires_grad=False)
 
     def _distribution(self, obs):
         preactivations = self.encoder(obs)
@@ -124,7 +124,12 @@ class AbstractActorCritic(nn.Module):
 
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
-        self, observation_space, action_space, shared_encoder=False, hidden_sizes=16, log_std=0.5
+        self,
+        observation_space,
+        action_space,
+        shared_encoder=False,
+        hidden_sizes=16,
+        log_std=0.5,
     ):
         super().__init__()
 
