@@ -29,19 +29,19 @@ class TrainPPOConv(
 
         # env setup
         env = make_env(
-            env_name=self.get("ENV", "CarRacing-v0"),
+            env_name=self.get("env_name"),
             seed=SEED,
-            render_mode=False,
-            full_ep=False,
         )
-        device = "cpu" #torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # policy and value networks
         ac = ConvActorCritic(
             env.observation_space,
             env.action_space,
             shared_encoder=self.get("shared_encoder", False),
-            log_std=self.get("log_std")
+            hidden_sizes=self.get("conv_ac_hidden_scaling", 16),
+            log_std=self.get("log_std", 0.5),
+            scale_for_car_racing=True if "CarRacing" in self.get("env_name") else False,
         )
 
         if self.get("vae_enc_checkpoint"):
@@ -61,11 +61,7 @@ class TrainPPOConv(
 
         # buffer
         buf = PpoBuffer(
-            (
-                env.observation_space.shape[2],
-                env.observation_space.shape[1],
-                env.observation_space.shape[0],
-            ),
+            env.observation_space.shape,
             env.action_space.shape,
             self.get("steps_per_epoch"),
             self.get("gamma"),

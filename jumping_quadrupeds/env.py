@@ -1,11 +1,13 @@
 import numpy as np
 import gym
+import gym_duckietown
+from gym_duckietown.wrappers import PyTorchObsWrapper, ResizeWrapper
 import wandb
 
 from PIL import Image
 from gym.spaces.box import Box
 from gym.envs.box2d.car_racing import CarRacing
-from gym.env.box2d.dynamic_car_racing import DynamicCarRacing
+from gym.envs.box2d.dynamic_car_racing import DynamicCarRacing
 
 
 class VideoWrapper(gym.Wrapper):
@@ -63,6 +65,10 @@ def make_env(env_name, seed=-1, render_every=25):
         env = CarRacing()
     elif env_name == "DynamicCarRacing-v0":
         env = DynamicCarRacing()
+    elif env_name == "Duckietown-straight_road-v0":
+        env = ResizeWrapper(
+            PyTorchObsWrapper(gym.make(env_name)), resize_w=64, resize_h=64
+        )
     env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)

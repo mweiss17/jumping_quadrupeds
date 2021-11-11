@@ -57,19 +57,26 @@ class CNNCategoricalActor(Actor):
 
 
 class CNNGaussianActor(Actor):
-    def __init__(self, encoder, act_dim, hidden_sizes, log_std):
+    def __init__(
+        self, encoder, act_dim, hidden_sizes, log_std, scale_for_car_racing=True
+    ):
         super().__init__()
         self.encoder = encoder
         self.linear = nn.Linear(64 * hidden_sizes, act_dim)
         log_std = -log_std * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
+        # TODO move this out -- should be agnostic to action space
         self.action_min = torch.tensor([-1.0, 0.0, 0.0], requires_grad=False)
         self.action_max = torch.tensor([1.0, 1.0, 1.0], requires_grad=False)
+        self.scale_for_car_racing = scale_for_car_racing
 
     def _distribution(self, obs):
+        if len(obs.shape) == 3:
+            obs = obs.unsqueeze(0)
         preactivations = self.encoder(obs)
         mu = torch.tanh(self.linear(preactivations))
-        mu = self.action_min + ((mu + 1) / 2) * (self.action_max - self.action_min)
+        if self.scale_for_car_racing:
+            mu = self.action_min + ((mu + 1) / 2) * (self.action_max - self.action_min)
         std = torch.exp(self.log_std)
         return Normal(mu, std)
 
@@ -84,10 +91,7 @@ class CNNCritic(nn.Module):
         self.linear = nn.Linear(64 * hidden_sizes, 1)
 
     def forward(self, obs):
-        # x = obs.float() / 255.0
-        return torch.squeeze(
-            self.linear(self.encoder(obs)), -1
-        )  # Critical to ensure v has right shape.
+        return torch.squeeze(self.linear(self.encoder(obs)), -1)
 
 
 class AbstractActorCritic(nn.Module):
@@ -130,20 +134,23 @@ class ConvActorCritic(AbstractActorCritic):
         shared_encoder=False,
         hidden_sizes=16,
         log_std=0.5,
+        scale_for_car_racing=True,
     ):
         super().__init__()
 
-        channels = observation_space.shape[-1]
+        channels = observation_space.shape[0]
 
         actor_encoder = WorldModelsConvEncoder(channels)
         critic_encoder = (
             actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
         )
+
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space.shape[0],
             hidden_sizes,  # 4 * 4 square scaling factor for car-racing
             log_std,
+            scale_for_car_racing=scale_for_car_racing,
         )
 
         # build value function
@@ -164,6 +171,8 @@ class ConvActorCritic(AbstractActorCritic):
 
     def step(self, obs):
         with torch.no_grad():
+            if len(obs.shape) == 3:
+                obs = obs.unsqueeze(0)
             pi = self.pi._distribution(obs)
             a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)

@@ -82,7 +82,9 @@ class PPO:
             1 - self._config.get("clip_ratio")
         )
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv)
+        pi_info = dict(
+            kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv
+        )
 
         return loss_pi, pi_info
 
@@ -131,15 +133,15 @@ class PPO:
             ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
             self.exp.wandb_log(
                 **{
-                    "act-mean-turn": action_mean[0],
-                    "act-mean-gas": action_mean[1],
-                    "act-mean-brake": action_mean[2],
-                    "log-p-turn": logp_mean[0],
-                    "log-p-gas": logp_mean[1],
-                    "log-p-brake": logp_mean[2],
-                    "act-std-turn": action_std[0],
-                    "act-std-gas": action_std[1],
-                    "act-std-brake": action_std[2],
+                    # "act-mean-turn": action_mean[0],
+                    # "act-mean-gas": action_mean[1],
+                    # "act-mean-brake": action_mean[2],
+                    # "log-p-turn": logp_mean[0],
+                    # "log-p-gas": logp_mean[1],
+                    # "log-p-brake": logp_mean[2],
+                    # "act-std-turn": action_std[0],
+                    # "act-std-gas": action_std[1],
+                    # "act-std-brake": action_std[2],
                     "loss-pi": loss_pi.detach().item(),
                     "loss-v": loss_v.item(),
                     "value-estimate": value_estimate.detach().mean().cpu().numpy(),
