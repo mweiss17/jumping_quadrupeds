@@ -1,6 +1,5 @@
 dataloader:
   batch_size: 1024
-  shuffle: "True"
   num_workers: 12
 
 #max_num_samples: 1024 # uncomment if you want to limit the number of samples to load
@@ -15,4 +14,5 @@ lr: 0.001
 scheduler_gamma: 0.95
 
 paths:
-  rollouts: "random-rollouts-50k"
+  rollouts: "random-rollouts-50k/CarRacing-v0_rollouts_e256_t200.hdf5"
+#  rollouts: "random-rollouts-50k/DynamicCarRacing-v0_rollouts_e8_t200.hdf5"

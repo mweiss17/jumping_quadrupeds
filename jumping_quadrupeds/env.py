@@ -5,6 +5,7 @@ import wandb
 from PIL import Image
 from gym.spaces.box import Box
 from gym.envs.box2d.car_racing import CarRacing
+from gym.env.box2d.dynamic_car_racing import DynamicCarRacing
 
 
 class VideoWrapper(gym.Wrapper):
@@ -60,6 +61,8 @@ class VideoWrapper(gym.Wrapper):
 def make_env(env_name, seed=-1, render_every=25):
     if env_name == "CarRacing-v0":
         env = CarRacing()
+    elif env_name == "DynamicCarRacing-v0":
+        env = DynamicCarRacing()
     env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)

@@ -1,4 +1,5 @@
 import os
+from os.path import expanduser, expandvars
 import sys
 import time
 import torch
@@ -7,16 +8,17 @@ import numpy as np
 from torch import optim
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
 from pathlib import Path
+from torch.utils.data import RandomSampler, DataLoader, Subset
 
 # to add jumping_quadrupeds to python path
-from jumping_quadrupeds.utils import common_img_transforms
-
 sys.path.append(os.getcwd())
 
 from jumping_quadrupeds.models.vae import ConvVAE
 from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder, FlosConvEncoder
-from jumping_quadrupeds.dataset import Box2dRollout, MySubset
+from jumping_quadrupeds.dataset import Hdf5ImgDataset
+from jumping_quadrupeds.utils import common_img_transforms, abs_path
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun
 from speedrun import (
@@ -45,28 +47,37 @@ class TrainVAE(
         if self.get("use_wandb"):
             self.initialize_wandb()
 
-        self.transforms = {
+        self.transform = {
             "train": common_img_transforms(with_flip=True),
             "valid": common_img_transforms(),
         }
 
-        # Dataset
-        dataset_path = os.path.abspath(
-            os.path.expanduser(os.path.expandvars(self.get("paths/rollouts")))
-        )
-        dataset = Box2dRollout(dataset_path)
+        self._build_dataset()
+        self._build_model()
+        self._build_optimizer()
 
-        # Split dataset into train and validation splits
-        split_idx = len(dataset) // 8
-        self.valid, self.train = torch.utils.data.random_split(
-            dataset, [split_idx, len(dataset) - split_idx]
-        )
-        self.train = MySubset(self.train, self.transforms["train"])
-        self.valid = MySubset(self.valid, self.transforms["valid"])
+    def _build_dataset(self):
+        ds_path = abs_path(expanduser(expandvars(self.get("paths/rollouts"))))
 
-        self.train = torch.utils.data.DataLoader(self.train, **self.get("dataloader"))
-        self.valid = torch.utils.data.DataLoader(self.valid, **self.get("dataloader"))
+        train = Hdf5ImgDataset(ds_path, transform=self.transform["train"], flat=True)
+        valid = Hdf5ImgDataset(ds_path, transform=self.transform["valid"], flat=True)
 
+        split_percent = 0.8
+        num_samples = train.episodes * train.steps
+        sample_indices = np.arange(num_samples)
+        mid = int(num_samples * split_percent)
+        num_samples_train = sample_indices[0:mid]
+        num_samples_valid = sample_indices[mid:num_samples]
+
+        train_ds = Subset(train, num_samples_train)
+        sampler = RandomSampler(train_ds)
+        self.train = DataLoader(train_ds, sampler=sampler, **self.get("dataloader"))
+
+        valid_ds = Subset(valid, num_samples_valid)
+        sampler = RandomSampler(valid_ds)
+        self.valid = DataLoader(valid_ds, sampler=sampler, **self.get("dataloader"))
+
+    def _build_model(self):
         img_channels = 3
         if self.get("encoder_type") == "flo":
             encoder = FlosConvEncoder(img_channels)
@@ -76,6 +87,7 @@ class TrainVAE(
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
+    def _build_optimizer(self):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.get("lr"))
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, "min", factor=0.5, patience=5
@@ -104,8 +116,8 @@ class TrainVAE(
 
         for epoch in self.progress(range(self.get("num_epochs")), desc="epochs..."):
             # Train the model
-            for imgs, rollout_envs in tqdm(self.train, desc="batches..."):
-                imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(self.device)
+            for imgs in tqdm(self.train, desc="batches..."):
+                imgs = imgs.to(self.device)
                 x_hat, mu, log_var = self.model(imgs)
                 loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                 self.optimizer.zero_grad()
@@ -146,10 +158,8 @@ class TrainVAE(
             if epoch % self.get("valid_every") == 0:
                 self.model.eval()
 
-                for imgs, rollout_envs in tqdm(self.valid, "valid batches..."):
-                    imgs, rollout_envs = imgs.to(self.device), rollout_envs.to(
-                        self.device
-                    )
+                for imgs in tqdm(self.valid, "valid batches..."):
+                    imgs = imgs.to(self.device)
                     x_hat, mu, log_var = self.model(imgs)
                     valid_loss = self.model.loss_function(x_hat, imgs, mu, log_var)
                     if self.get("use_wandb"):
