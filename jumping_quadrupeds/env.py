@@ -1,17 +1,21 @@
 import numpy as np
 import gym
+import wandb
 import gym_duckietown
 from gym_duckietown.wrappers import PyTorchObsWrapper, ResizeWrapper
-import wandb
-
 from PIL import Image
 from gym.spaces.box import Box
 from gym.envs.box2d.car_racing import CarRacing
 from gym.envs.box2d.dynamic_car_racing import DynamicCarRacing
+
 from pyvirtualdisplay import Display
 
-disp = Display()
-disp.start()
+try:
+    disp = Display()
+    disp.start()
+except Exception as e:
+    print(f"couldn't start pyvirtualdisplay: {e}")
+    pass
 
 
 class VideoWrapper(gym.Wrapper):
@@ -66,10 +70,13 @@ class VideoWrapper(gym.Wrapper):
 
 def make_env(env_name, seed=-1, render_every=25):
     if env_name == "CarRacing-v0":
-        env = CarRacing()
+        env = ResizeWrapper(PyTorchObsWrapper(CarRacing()), resize_w=64, resize_h=64)
     elif env_name == "DynamicCarRacing-v0":
-        env = DynamicCarRacing()
+        env = ResizeWrapper(
+            PyTorchObsWrapper(DynamicCarRacing()), resize_w=64, resize_h=64
+        )
     elif "Duckietown" in env_name:
+
         env = ResizeWrapper(
             PyTorchObsWrapper(gym.make(env_name)), resize_w=64, resize_h=64
         )
