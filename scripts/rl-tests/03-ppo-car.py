@@ -41,7 +41,6 @@ class TrainPPOConv(
             shared_encoder=self.get("shared_encoder", False),
             hidden_sizes=self.get("conv_ac_hidden_scaling", 16),
             log_std=self.get("log_std", 0.5),
-            scale_for_car_racing=True if "CarRacing" in self.get("env_name") else False,
         )
 
         if self.get("vae_enc_checkpoint"):

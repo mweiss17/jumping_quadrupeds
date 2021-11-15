@@ -65,7 +65,7 @@ def make_env(env_name, seed=-1, render_every=25):
         env = CarRacing()
     elif env_name == "DynamicCarRacing-v0":
         env = DynamicCarRacing()
-    elif env_name == "Duckietown-straight_road-v0":
+    elif "Duckietown" in env_name:
         env = ResizeWrapper(
             PyTorchObsWrapper(gym.make(env_name)), resize_w=64, resize_h=64
         )

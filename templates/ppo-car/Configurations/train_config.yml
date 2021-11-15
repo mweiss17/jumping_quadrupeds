@@ -1,5 +1,5 @@
 # env_name (str): Environment name, used for logging
-env_name: "Duckietown-straight_road-v0"
+env_name:  "Duckietown-small_loop-v0" #CarRacing-v0 #
 
 # verbose (bool): should PPO print verbose debugging messages to stdout?
 verbose: False
