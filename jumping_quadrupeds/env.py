@@ -8,15 +8,6 @@ from gym.spaces.box import Box
 from gym.envs.box2d.car_racing import CarRacing
 from gym.envs.box2d.dynamic_car_racing import DynamicCarRacing
 
-from pyvirtualdisplay import Display
-
-try:
-    disp = Display()
-    disp.start()
-except Exception as e:
-    print(f"couldn't start pyvirtualdisplay: {e}")
-    pass
-
 
 class VideoWrapper(gym.Wrapper):
     """Gathers up the frames from an episode and allows to upload them to Weights & Biases
