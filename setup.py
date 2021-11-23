@@ -28,4 +28,11 @@ setup(
         "wormulon @ git+ssh://git@github.com/mweiss17/wormulon@main#egg=wormulon",
         "duckietown-gym-daffy @ git+https://github.com/duckietown/gym-duckietown@daffy#egg=duckietown-gym-daffy",
     ],
+    extras_require={
+        "dmc": [
+            "dm_control @ git+git://github.com/deepmind/dm_control.git",
+            "dmc2gym @  git+git://github.com/denisyarats/dmc2gym.git",
+            "mujoco_py",
+        ]
+    },
 )
