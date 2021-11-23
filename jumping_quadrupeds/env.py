@@ -5,8 +5,12 @@ import gym_duckietown
 from gym_duckietown.wrappers import PyTorchObsWrapper, ResizeWrapper
 from PIL import Image
 from gym.spaces.box import Box
-from gym.envs.box2d.car_racing import CarRacing
-from gym.envs.box2d.dynamic_car_racing import DynamicCarRacing
+
+try:
+    import dm_control
+    import dmc2gym
+except ImportError:
+    dm_control = None
 
 
 class VideoWrapper(gym.Wrapper):
@@ -59,28 +63,31 @@ class VideoWrapper(gym.Wrapper):
         self.last_frames = None
 
 
-def make_env(env_name, seed=-1, render_every=25):
-    if env_name == "CarRacing-v0":
-        env = ResizeWrapper(PyTorchObsWrapper(CarRacing()), resize_w=64, resize_h=64)
-    elif env_name == "DynamicCarRacing-v0":
-        env = ResizeWrapper(
-            PyTorchObsWrapper(DynamicCarRacing()), resize_w=64, resize_h=64
-        )
-    elif "Duckietown" in env_name:
+def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
+    # TODO add framestacking https://github.com/facebookresearch/drqv2/blob/7ad7e05fa44378c64998dc89586a9703b74531ab/dmc.py
+    if env_name.startswith("dm-"):
+        domain, task = env_name[3:].split("_")
+        camera_id = dict(quadruped=2).get(domain, 0)
 
-        env = ResizeWrapper(
-            PyTorchObsWrapper(gym.make(env_name)), resize_w=64, resize_h=64
+        env = dmc2gym.make(
+            domain_name,
+            task_name,
+            from_pixels=True,
+            visualize_reward=False,
+            width=w,
+            height=h,
+            frame_skip=action_repeat,
+            camera_id=camera_id,
         )
+    elif env_name.startswith("gym-"):
+        env_name = env_name[4:]
+        env = gym.make(env_name)
+        env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
+    else:
+        raise ValueError("Unknown environment name: {}".format(env_name))
+
     env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)
-    """
-  print("environment details")
-  print("env.action_space", env.action_space)
-  print("high, low", env.action_space.high, env.action_space.low)
-  print("environment details")
-  print("env.observation_space", env.observation_space)
-  print("high, low", env.observation_space.high, env.observation_space.low)
-  assert False
-  """
+
     return env

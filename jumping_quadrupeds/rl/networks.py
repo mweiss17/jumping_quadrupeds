@@ -2,11 +2,11 @@ import numpy as np
 import torch
 from gym.spaces import Box, Discrete
 from torch import nn
-from torch.distributions import Categorical, Normal
+from torch.distributions import Categorical
 from torch.nn import functional as F
 from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.rl.utils import mlp
-from jumping_quadrupeds.utils import layer_init
+from jumping_quadrupeds.utils import layer_init, TruncatedNormal
 
 
 class Actor(nn.Module):
@@ -74,7 +74,7 @@ class CNNGaussianActor(Actor):
         mu = torch.tanh(self.linear(preactivations))
         mu = self.action_min + ((mu + 1) / 2) * (self.action_max - self.action_min)
         std = torch.exp(self.log_std)
-        return Normal(mu, std)
+        return TruncatedNormal(mu, std)
 
     def _log_prob_from_distribution(self, pi, act):
         return pi.log_prob(act)
