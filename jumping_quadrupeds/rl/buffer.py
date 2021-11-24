@@ -64,6 +64,14 @@ class ReplayBufferStorage:
             self._current_episode = defaultdict(list)
             self._store_episode(episode)
 
+    def finish_path(self):
+        episode = dict()
+        for spec in self._data_specs:
+            value = self._current_episode[spec.name]
+            episode[spec.name] = np.array(value, spec.dtype)
+        self._store_episode(episode)
+        self._current_episode = defaultdict(list)
+
     def _preload(self):
         self._num_episodes = 0
         self._num_transitions = 0
@@ -88,28 +96,22 @@ class ReplayBuffer(IterableDataset):
         replay_dir,
         max_size,
         num_workers,
-        nstep,
         discount,
-        fetch_every,
         save_snapshot,
-        gae_lambda=None,
-        compute_adv=False,
-        return_logp=False,
+        fetch_every,
+        **kwargs,
     ):
         self._replay_dir = replay_dir
         self._size = 0
         self._max_size = max_size
         self._num_workers = max(1, num_workers)
+        self._max_size_per_worker = max_size // self._num_workers
         self._episode_fns = []
         self._episodes = dict()
-        self._nstep = nstep
         self._discount = discount
         self._fetch_every = fetch_every
         self._samples_since_last_fetch = fetch_every
         self._save_snapshot = save_snapshot
-        self._gae_lambda = gae_lambda
-        self._compute_adv = compute_adv
-        self._return_logp = return_logp
 
     def _sample_episode(self):
         eps_fn = random.choice(self._episode_fns)
@@ -121,16 +123,13 @@ class ReplayBuffer(IterableDataset):
         except:
             return False
         eps_len = episode_len(episode)
-        while eps_len + self._size > self._max_size:
+        while eps_len + self._size > self._max_size_per_worker:
             early_eps_fn = self._episode_fns.pop(0)
             early_eps = self._episodes.pop(early_eps_fn)
             self._size -= episode_len(early_eps)
             early_eps_fn.unlink(missing_ok=True)
         self._episode_fns.append(eps_fn)
         self._episode_fns.sort()
-        if self._compute_adv:
-            episode = self.compute_rets_and_advs(episode)
-
         self._episodes[eps_fn] = episode
         self._size += eps_len
 
@@ -157,28 +156,22 @@ class ReplayBuffer(IterableDataset):
             if fetched_size + eps_len > self._max_size:
                 break
             fetched_size += eps_len
+            print(f"try_fetch: {eps_fn}")
             if not self._store_episode(eps_fn):
                 break
 
-    def compute_rets_and_advs(self, episode):
-        # add zeros to the end
-        rew = np.pad(episode["rew"], ((0, 1), (0, 0)), "constant")
-        val = np.pad(episode["val"], ((0, 1), (0, 0)), "constant")
+    def _sample(self):
+        pass
 
-        # the next two lines implement GAE-Lambda advantage calculation
-        deltas = rew[:-1] + self._discount * val[1:] - val[:-1]
-        adv_buf = discount_cumsum(deltas, self._discount * self._gae_lambda)
+    def __iter__(self):
+        while True:
+            yield self._sample()
 
-        # # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = np.mean(adv_buf), np.std(adv_buf)
-        adv_buf = (adv_buf - adv_mean) / adv_std
-        episode["adv"] = adv_buf
 
-        # the next line computes rewards-to-go, to be targets for the value function
-        ret_buf = discount_cumsum(rew, self._discount)[:-1]
-
-        episode["ret"] = ret_buf
-        return episode
+class OffPolicyReplayBuffer(ReplayBuffer):
+    def __init__(self, nstep=None, **kwargs):
+        super().__init__(**kwargs)
+        self._nstep = nstep
 
     def _sample(self):
         try:
@@ -207,16 +200,77 @@ class ReplayBuffer(IterableDataset):
             "discount": discount,
             "next_obs": next_obs,
         }
-        if self._return_logp:
-            sample["logp"] = episode["logp"][idx]
-        if self._compute_adv:
-            sample["adv"] = episode["adv"][idx]
-            sample["ret"] = episode["ret"][idx]
+
         return sample
 
-    def __iter__(self):
-        while True:
-            yield self._sample()
+
+class OnPolicyReplayBuffer(ReplayBuffer):
+    def __init__(self, replay_dir=None, **kwargs):
+        super().__init__(replay_dir=replay_dir, **kwargs)
+        self._gae_lambda = kwargs.get("gae_lambda", 0.97)
+        self.eps_idx = 0
+        self.step_idx = 0
+        self.total_idx = 0
+
+    def _sample(self):
+        try:
+            self._try_fetch()
+        except:
+            traceback.print_exc()
+        if self.total_idx >= self._max_size:
+            self.eps_idx = 0
+            self.total_idx = 0
+        self._samples_since_last_fetch += 1
+        print(
+            f"self.step_idx: {self.step_idx}, self.eps_idx: {self.eps_idx}, self.max_size: {self._max_size}"
+        )
+        try:
+
+            episode = self._episodes[self._episode_fns[self.eps_idx]]
+        except Exception as e:
+            print(e)
+            breakpoint()
+        if self.step_idx == 0:
+            episode = self.compute_rets_and_advs(episode)
+
+        obs = episode["obs"][self.step_idx]
+        action = episode["act"][self.step_idx]
+        reward = episode["rew"][self.step_idx]
+        sample = {
+            "obs": torch.as_tensor(obs, dtype=torch.float32) / 255,
+            "act": action,
+            "rew": reward,
+            "adv": episode["adv"][self.step_idx],
+            "ret": episode["ret"][self.step_idx],
+            "logp": episode["logp"][self.step_idx],
+        }
+
+        self.step_idx += 1
+        self.total_idx += 1
+        if self.step_idx == episode_len(episode) + 1:
+            self.eps_idx += 1
+            self.step_idx = 0
+        return sample
+
+    def compute_rets_and_advs(self, episode):
+        # add zeros to the end
+        rew = np.pad(episode["rew"], ((0, 1), (0, 0)), "constant")
+        val = np.pad(episode["val"], ((0, 1), (0, 0)), "constant")
+
+        # the next two lines implement GAE-Lambda advantage calculation
+        deltas = rew[:-1] + self._discount * val[1:] - val[:-1]
+        adv_buf = discount_cumsum(deltas, self._discount * self._gae_lambda)
+
+        # # the next two lines implement the advantage normalization trick
+        adv_mean, adv_std = np.mean(adv_buf), np.std(adv_buf)
+        adv_buf = (adv_buf - adv_mean) / adv_std
+        episode["adv"] = adv_buf
+
+        # the next line computes rewards-to-go, to be targets for the value function
+        ret_buf = discount_cumsum(rew, self._discount)[:-1]
+
+        episode["ret"] = ret_buf
+        return episode
 
 
 def _worker_init_fn(worker_id):
@@ -225,37 +279,16 @@ def _worker_init_fn(worker_id):
     random.seed(seed)
 
 
-def make_replay_loader(
-    replay_dir,
-    max_size,
-    batch_size,
-    num_workers,
-    save_snapshot,
-    nstep,
-    discount,
-    gae_lambda,
-    compute_adv,
-    return_logp,
-):
-    max_size_per_worker = max_size // max(1, num_workers)
-
-    iterable = ReplayBuffer(
-        replay_dir,
-        max_size_per_worker,
-        num_workers,
-        nstep,
-        discount,
-        fetch_every=1000,
-        save_snapshot=save_snapshot,
-        gae_lambda=gae_lambda,
-        compute_adv=compute_adv,
-        return_logp=return_logp,
-    )
+def make_replay_loader(replay_dir, on_policy, kwargs=None):
+    if on_policy:
+        iterable = OnPolicyReplayBuffer(replay_dir, **kwargs)
+    else:
+        iterable = OffPolicyReplayBuffer(replay_dir, **kwargs)
 
     loader = torch.utils.data.DataLoader(
         iterable,
-        batch_size=batch_size,
-        num_workers=num_workers,
+        batch_size=kwargs.get("batch_size"),
+        num_workers=kwargs.get("num_workers"),
         pin_memory=True,
         worker_init_fn=_worker_init_fn,
     )

@@ -207,9 +207,9 @@ class PPO:
             obs = torch.as_tensor(self.obs.copy() / 255, dtype=torch.float32).to(
                 self.device
             )
-            self.act, self.val, self.logp = self.ac.step(obs)
+            self.action, self.val, self.logp = self.ac.step(obs)
 
-            self.next_obs, self.rew, self.done, misc = self.env.step(self.act)
+            self.next_obs, self.rew, self.done, misc = self.env.step(self.action)
 
             self.total_steps += 1
             self.exp.next_step()
@@ -217,14 +217,12 @@ class PPO:
             self.ep_len += 1
             step = {
                 "obs": self.obs,
-                "act": self.act,
+                "act": self.action,
                 "rew": self.rew,
                 "val": self.val,
                 "logp": self.logp,
             }
             self.buf.add(step, self.done)
-
-            # logger.store(VVals=v)
 
             # Update obs (critical!)
             self.obs = self.next_obs
@@ -262,10 +260,9 @@ class PPO:
                             }
                         )
 
-                # self.buf.finish_path(self.val)
+                self.buf.finish_path(self.val)
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
-                    # logger.store(EpRet=ep_ret, EpLen=ep_len)
                     pass
                 self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
 

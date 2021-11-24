@@ -72,3 +72,12 @@ def discount_cumsum(x, discount):
          x2]
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+
+
+def to_torch(xs, device):
+    return tuple(torch.as_tensor(x, device=device) for x in xs)
+
+
+def soft_update_params(net, target_net, tau):
+    for param, target_param in zip(net.parameters(), target_net.parameters()):
+        target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)

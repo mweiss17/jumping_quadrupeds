@@ -72,16 +72,23 @@ class TrainPPOConv(
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
         buf = ReplayBufferStorage(data_specs, replay_dir)
 
-        self.replay_loader = make_replay_loader(replay_dir, **self.get("buffer/kwargs"))
+        self.replay_loader = make_replay_loader(
+            replay_dir, self.get("buffer/on_policy"), self.get("buffer/kwargs")
+        )
         self._replay_iter = None
         if self.get("agent/name") == "ppo":
-            from jumping_quadrupeds.rl.ppo import PPO
+            from jumping_quadrupeds.rl.ppo.ppo import PPO
 
             self.agent = PPO(self, env, ac, buf, device=device)
         elif self.get("agent/name") == "drqv2":
-            from jumping_quadrupeds.rl.drqv2 import DRQV2Agent
+            from jumping_quadrupeds.rl.drqv2.agent import DrQV2Agent
 
-            self.agent == DRQV2Agent(self, env, ac, buf, device=device)
+            self.agent = DrQV2Agent(
+                env.observation_space,
+                env.action_space,
+                device,
+                **self.get("agent/kwargs"),
+            )
 
     @property
     def replay_iter(self):
@@ -92,7 +99,7 @@ class TrainPPOConv(
     @property
     def checkpoint_now(self):
         if (self.epoch % self.get("save_freq") == 0) or (
-            epoch == self.get("epochs") - 1
+            self.epoch == self.get("epochs") - 1
         ):
             return True
         return False
@@ -110,7 +117,7 @@ class TrainPPOConv(
             self.agent.update(self.replay_iter)
 
             # Record video of the updated policy
-            self.send_wandb_video()
+            self.agent.env.send_wandb_video()
             self.next_epoch()
 
 

@@ -1,8 +1,6 @@
 import numpy as np
 import gym
 import wandb
-import gym_duckietown
-from gym_duckietown.wrappers import PyTorchObsWrapper, ResizeWrapper
 from PIL import Image
 from gym.spaces.box import Box
 
@@ -102,6 +100,11 @@ def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
     elif env_name.startswith("gym-"):
         env_name = env_name[4:]
         env = gym.make(env_name)
+        from gym_duckietown.wrappers import PyTorchObsWrapper, ResizeWrapper
+
+        if "Duckietown" in env_name:
+            import gym_duckietown
+
         env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
     else:
         raise ValueError("Unknown environment name: {}".format(env_name))
