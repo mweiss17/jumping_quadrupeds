@@ -27,69 +27,6 @@ class Actor(nn.Module):
         return pi, logp_a
 
 
-class CNNCategoricalActor(Actor):
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
-        super().__init__()
-        # [(W−K+2P)/S]+1
-        self.logits_net = nn.Sequential(
-            nn.Conv2d(obs_dim, 32, kernel_size=8, stride=4, padding=0),
-            # [(84−8+0)/4]+1 = 20
-            activation(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
-            # [(20−4+0)/2]+1 = 9
-            activation(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
-            # [(9−3+0)]+1 = 7
-            activation(),
-            nn.Flatten(),
-            nn.Linear(hidden_sizes * 64, act_dim),
-        )
-
-    def _distribution(self, obs):
-        x = obs.float() / 255
-        if len(x.shape) == 3:
-            x.unsqueeze_(0)
-        logits = self.logits_net(x)
-        return Categorical(logits=logits)
-
-    def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act)
-
-
-class CNNGaussianActor(Actor):
-    def __init__(self, encoder, action_space, hidden_sizes, log_std):
-        super().__init__()
-        self.encoder = encoder
-        act_dim = action_space.shape[0]
-        self.linear = nn.Linear(64 * hidden_sizes, act_dim)
-        log_std = -log_std * np.ones(act_dim, dtype=np.float32)
-        self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
-        self.action_min = torch.tensor(action_space.low, requires_grad=False)
-        self.action_max = torch.tensor(action_space.high, requires_grad=False)
-
-    def _distribution(self, obs):
-        if len(obs.shape) == 3:
-            obs = obs.unsqueeze(0)
-        preactivations = self.encoder(obs)
-        mu = torch.tanh(self.linear(preactivations))
-        mu = self.action_min + ((mu + 1) / 2) * (self.action_max - self.action_min)
-        std = torch.exp(self.log_std)
-        return TruncatedNormal(mu, std)
-
-    def _log_prob_from_distribution(self, pi, act):
-        return pi.log_prob(act)
-
-
-class CNNCritic(nn.Module):
-    def __init__(self, encoder, hidden_sizes):
-        super().__init__()
-        self.encoder = encoder
-        self.linear = nn.Linear(64 * hidden_sizes, 1)
-
-    def forward(self, obs):
-        return torch.squeeze(self.linear(self.encoder(obs)), -1)
-
-
 class AbstractActorCritic(nn.Module):
     pi: nn.Module  # policy function/network
     v: nn.Module  # value function/network
@@ -120,6 +57,39 @@ class AbstractActorCritic(nn.Module):
     def get_value_params(self):
         """return the parameters of all networks involved in the value function for the optimizer"""
         pass
+
+
+class CNNGaussianActor(Actor):
+    def __init__(self, encoder, action_space, hidden_sizes, log_std):
+        super().__init__()
+        self.encoder = encoder
+        self.action_space = action_space
+        self.low = action_space.low[0]
+        self.high = action_space.high[0]
+        self.linear = nn.Linear(64 * hidden_sizes, self.action_space.shape[0])
+        log_std = -log_std * np.ones(self.action_space.shape[0], dtype=np.float32)
+        self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
+
+    def _distribution(self, obs):
+        if len(obs.shape) == 3:
+            obs = obs.unsqueeze(0)
+        preactivations = self.encoder(obs)
+        mu = torch.tanh(self.linear(preactivations))
+        std = torch.exp(self.log_std)
+        return TruncatedNormal(mu, std, low=self.low, high=self.high)
+
+    def _log_prob_from_distribution(self, pi, act):
+        return pi.log_prob(act)
+
+
+class CNNCritic(nn.Module):
+    def __init__(self, encoder, hidden_sizes):
+        super().__init__()
+        self.encoder = encoder
+        self.linear = nn.Linear(64 * hidden_sizes, 1)
+
+    def forward(self, obs):
+        return torch.squeeze(self.linear(self.encoder(obs)), -1)
 
 
 class ConvActorCritic(AbstractActorCritic):
@@ -163,6 +133,7 @@ class ConvActorCritic(AbstractActorCritic):
             param.requires_grad = False
 
     def step(self, obs):
+
         with torch.no_grad():
             if len(obs.shape) == 3:
                 obs = obs.unsqueeze(0)
@@ -170,7 +141,11 @@ class ConvActorCritic(AbstractActorCritic):
             a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             v = self.v(obs)
-        return a.cpu().numpy()[0], v.cpu().numpy(), logp_a.cpu().numpy()
+        return (
+            a.squeeze(0).cpu().numpy(),
+            v.cpu().numpy(),
+            logp_a.squeeze(0).cpu().numpy(),
+        )
 
     def get_policy_params(self):
         return self.pi.parameters()

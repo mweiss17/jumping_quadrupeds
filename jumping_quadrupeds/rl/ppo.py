@@ -5,7 +5,6 @@ import torch
 from torch.optim import Adam, SGD
 from tqdm import tqdm, trange
 
-from jumping_quadrupeds.rl.buffer import PpoBuffer
 from jumping_quadrupeds.rl.networks import AbstractActorCritic
 
 
@@ -20,7 +19,7 @@ class PPO:
         exp,
         env,
         actor_critic: AbstractActorCritic,
-        buf: PpoBuffer,
+        buf,
         device=None,
     ) -> None:
 
@@ -60,9 +59,9 @@ class PPO:
 
     def compute_loss_pi(self, data):
         """Computes policy loss"""
-
         obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
         # Policy loss
+
         pi, logp = self.ac.pi(obs, act)
         ratio = torch.exp(logp - logp_old)
         clip_adv = (
@@ -94,17 +93,17 @@ class PPO:
         value_estimate = self.ac.v(obs)
         return value_estimate, ((value_estimate - ret) ** 2).mean()
 
-    def update(self):
+    def update(self, replay_iter):
         """Updates the policy and value function based on the latest replay buffer"""
 
-        data = self.buf.get()
-        self.buf.save(self.exp.experiment_directory)
+        data = next(replay_iter)
 
         # Train policy with multiple steps of gradient descent
         if self._config.get("verbose"):
             tqdm.write("Training pi")
 
         self.ac.train()
+
         for i in range(self._config.get("train_pi_iters")):
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(data)
@@ -133,15 +132,15 @@ class PPO:
             ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
             self.exp.wandb_log(
                 **{
-                    # "act-mean-turn": action_mean[0],
-                    # "act-mean-gas": action_mean[1],
-                    # "act-mean-brake": action_mean[2],
-                    # "log-p-turn": logp_mean[0],
-                    # "log-p-gas": logp_mean[1],
-                    # "log-p-brake": logp_mean[2],
-                    # "act-std-turn": action_std[0],
-                    # "act-std-gas": action_std[1],
-                    # "act-std-brake": action_std[2],
+                    "act-mean-turn": action_mean[0],
+                    "act-mean-gas": action_mean[1],
+                    "act-mean-brake": action_mean[2],
+                    "log-p-turn": logp_mean[0],
+                    "log-p-gas": logp_mean[1],
+                    "log-p-brake": logp_mean[2],
+                    "act-std-turn": action_std[0],
+                    "act-std-gas": action_std[1],
+                    "act-std-brake": action_std[2],
                     "loss-pi": loss_pi.detach().item(),
                     "loss-v": loss_v.item(),
                     "value-estimate": value_estimate.detach().mean().cpu().numpy(),
@@ -179,30 +178,6 @@ class PPO:
             torch.load(self._config.get("vf_optim_checkpoint"))
         )
 
-    def train_loop(self):
-        """Automatic training loop for PPO that trains for prespecified number of epochs"""
-
-        # Main loop: collect experience in env and update/log each epoch
-        for epoch in trange(self._config.get("epochs")):
-            if self._config.get("verbose"):
-                tqdm.write("Collecting data")
-            self.collect_data()
-
-            # Save model
-            if (epoch % self._config.get("save_freq") == 0) or (
-                epoch == self._config.get("epochs") - 1
-            ):
-                self.save_checkpoint(epoch)
-
-            # Perform PPO update!
-            if self._config.get("verbose"):
-                tqdm.write("Updating PPO")
-            self.update()
-
-            # Record video of the updated policy
-            self.env.send_wandb_video()
-            self.exp.next_epoch()
-
         # Log info about epoch
         # logger.log_tabular("Epoch", epoch)
         # logger.log_tabular("EpRet", with_min_and_max=True)
@@ -220,23 +195,18 @@ class PPO:
         # logger.log_tabular("Time", time.time() - start_time)
         # logger.dump_tabular()
 
-    def collect_data(self):
+    def act(self):
         """Fill up the replay buffer with fresh rollouts based on the current policy"""
 
         if self.obs is None:
             self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
         episode_counter = 0
 
-        ac_step_timers = []
-        env_step_timers = []
-        env_reset_timers = []
-
         self.ac.eval()
-
         for t in trange(self._config.get("steps_per_epoch")):
-            obs = torch.as_tensor(self.obs.copy(), dtype=torch.float32).to(self.device)
-            # if self.total_steps > 20000:
-            #     breakpoint()
+            obs = torch.as_tensor(self.obs.copy() / 255, dtype=torch.float32).to(
+                self.device
+            )
             self.act, self.val, self.logp = self.ac.step(obs)
 
             self.next_obs, self.rew, self.done, misc = self.env.step(self.act)
@@ -245,15 +215,14 @@ class PPO:
             self.exp.next_step()
             self.ep_ret += self.rew
             self.ep_len += 1
-
-            buf_objs = (
-                self.obs,
-                self.act,
-                self.rew,
-                self.val,
-                self.logp,
-            )
-            self.buf.store(*buf_objs)
+            step = {
+                "obs": self.obs,
+                "act": self.act,
+                "rew": self.rew,
+                "val": self.val,
+                "logp": self.logp,
+            }
+            self.buf.add(step, self.done)
 
             # logger.store(VVals=v)
 
@@ -293,7 +262,7 @@ class PPO:
                             }
                         )
 
-                self.buf.finish_path(self.val)
+                # self.buf.finish_path(self.val)
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     # logger.store(EpRet=ep_ret, EpLen=ep_len)

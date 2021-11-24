@@ -35,8 +35,6 @@ train_pi_iters: 4
 # train_v_iters (int): Number of gradient descent steps to take on value function per epoch.
 train_v_iters: 4
 
-# lam (float): Lambda for GAE-Lambda. (Always between 0 and 1, close to 1.)
-lam: 0.97
 
 # max_ep_len (int): Maximum length of trajectory / episode / rollout. This is only used by some variable-length
 #  episode environments
@@ -70,3 +68,17 @@ log_std: 0.5
 
 # Sweep: Oct 19, 2021
 #  python3 scripts/salvo.py --- scripts/rl-tests/03-ppo-car.py ~/scratch-new/experiments/ppo-finetune-{job_idx} --inherit templates/ppo-car --config._wandb_run_name ppo-finetune-{job_idx} --config._wandb_group ppo-finetune-sweep --config.clip_ratio {clip} --config.pi_lr {pi_lr} --config.vf_lr {vf_lr} --config.target_kl {target_kl} --- jumping_quadrupeds/hyper/random_search.py -d pi_lr~log_uniform[0.00001,0.001]+vf_lr~log_uniform[0.00001,0.001]+clip~log_uniform[0.05,0.4]+target_kl~uniform[0.005,0.02] -n 50
+
+buffer:
+  kwargs:
+    max_size:  4000
+    batch_size: 4000
+    num_workers: 4 #0
+    save_snapshot: True
+    nstep: 1 # 3
+    discount: 0.99
+    # lam (float): Lambda for GAE-Lambda. (Always between 0 and 1, close to 1.)
+    gae_lambda: 0.97
+    compute_adv: True
+    return_logp: True
+

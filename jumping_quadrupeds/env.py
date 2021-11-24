@@ -63,6 +63,26 @@ class VideoWrapper(gym.Wrapper):
         self.last_frames = None
 
 
+class ActionScale(gym.core.Wrapper):
+    def __init__(self, env, new_min, new_max):
+        super().__init__(env)
+        orig_min = self.env.action_space.low
+        orig_max = self.env.action_space.high
+        new_min = np.array(new_min)
+        new_max = np.array(new_max)
+        self._transform = lambda a: orig_min + (orig_max - orig_min) / (
+            new_max - new_min
+        ) * (a - new_min)
+        self.env.action_space.low = np.repeat([new_min], env.action_space.shape)
+        self.env.action_space.high = np.repeat([new_max], env.action_space.shape)
+
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        return self.env.step(self._transform(action))
+
+
 def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
     # TODO add framestacking https://github.com/facebookresearch/drqv2/blob/7ad7e05fa44378c64998dc89586a9703b74531ab/dmc.py
     if env_name.startswith("dm-"):
@@ -70,8 +90,8 @@ def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
         camera_id = dict(quadruped=2).get(domain, 0)
 
         env = dmc2gym.make(
-            domain_name,
-            task_name,
+            domain,
+            task,
             from_pixels=True,
             visualize_reward=False,
             width=w,
@@ -85,7 +105,7 @@ def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
         env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
     else:
         raise ValueError("Unknown environment name: {}".format(env_name))
-
+    env = ActionScale(env, new_min=-1.0, new_max=1.0)
     env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)
