@@ -259,11 +259,8 @@ class PPO:
                                 "Number of Episodes": self.total_episodes,
                             }
                         )
-
-                self.buf.finish_path(self.val)
-                if terminal:
-                    # only save EpRet / EpLen if trajectory finished
-                    pass
+                if not self.done:
+                    self.buf.finish_episode()
                 self.obs, self.ep_ret, self.ep_len = self.env.reset(), 0, 0
 
     def play(self, episodes=3):

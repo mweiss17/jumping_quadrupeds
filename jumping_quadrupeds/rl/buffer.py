@@ -57,20 +57,15 @@ class ReplayBufferStorage:
             self._current_episode[spec.name].append(value)
 
         if eps_done:
-            episode = dict()
-            for spec in self._data_specs:
-                value = self._current_episode[spec.name]
-                episode[spec.name] = np.array(value, spec.dtype)
-            self._current_episode = defaultdict(list)
-            self._store_episode(episode)
+            self.finish_episode()
 
-    def finish_path(self):
+    def finish_episode(self):
         episode = dict()
         for spec in self._data_specs:
             value = self._current_episode[spec.name]
             episode[spec.name] = np.array(value, spec.dtype)
-        self._store_episode(episode)
         self._current_episode = defaultdict(list)
+        self._store_episode(episode)
 
     def _preload(self):
         self._num_episodes = 0
