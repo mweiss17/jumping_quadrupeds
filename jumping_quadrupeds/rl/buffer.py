@@ -151,7 +151,6 @@ class ReplayBuffer(IterableDataset):
             if fetched_size + eps_len > self._max_size:
                 break
             fetched_size += eps_len
-            print(f"try_fetch: {eps_fn}")
             if not self._store_episode(eps_fn):
                 break
 
@@ -216,9 +215,6 @@ class OnPolicyReplayBuffer(ReplayBuffer):
             self.eps_idx = 0
             self.total_idx = 0
         self._samples_since_last_fetch += 1
-        print(
-            f"self.step_idx: {self.step_idx}, self.eps_idx: {self.eps_idx}, self.max_size: {self._max_size}"
-        )
         try:
 
             episode = self._episodes[self._episode_fns[self.eps_idx]]
