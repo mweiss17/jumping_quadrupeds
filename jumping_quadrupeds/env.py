@@ -1,11 +1,7 @@
 import numpy as np
-import gym
 import wandb
-import gym_duckietown
-from gym_duckietown.wrappers import PyTorchObsWrapper, ResizeWrapper
-from PIL import Image
-from gym.spaces.box import Box
-
+import gym
+import cv2
 try:
     import dm_control
     import dmc2gym
@@ -63,15 +59,91 @@ class VideoWrapper(gym.Wrapper):
         self.last_frames = None
 
 
-def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
+class ActionScale(gym.core.Wrapper):
+    def __init__(self, env, new_min, new_max):
+        super().__init__(env)
+        orig_min = self.env.action_space.low
+        orig_max = self.env.action_space.high
+        new_min = np.array(new_min)
+        new_max = np.array(new_max)
+        self._transform = lambda a: orig_min + (orig_max - orig_min) / (
+            new_max - new_min
+        ) * (a - new_min)
+        self.env.action_space.low = np.repeat([new_min], env.action_space.shape)
+        self.env.action_space.high = np.repeat([new_max], env.action_space.shape)
+
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        return self.env.step(self._transform(action))
+
+
+class PyTorchObsWrapper(gym.ObservationWrapper):
+    """
+    Transpose the observation image tensors for PyTorch
+    """
+
+    def __init__(self, env=None):
+        gym.ObservationWrapper.__init__(self, env)
+        obs_shape = self.observation_space.shape
+        self.observation_space = gym.spaces.Box(
+            self.observation_space.low[0, 0, 0],
+            self.observation_space.high[0, 0, 0],
+            [obs_shape[2], obs_shape[1], obs_shape[0]],
+            dtype=self.observation_space.dtype,
+        )
+
+    def observation(self, observation):
+        return observation.transpose(2, 1, 0)
+
+
+class ResizeWrapper(gym.ObservationWrapper):
+    def __init__(self, env=None, resize_w=80, resize_h=80):
+        gym.ObservationWrapper.__init__(self, env)
+        self.resize_h = resize_h
+        self.resize_w = resize_w
+        obs_shape = self.observation_space.shape
+        self.observation_space = gym.spaces.Box(
+            self.observation_space.low[0, 0, 0],
+            self.observation_space.high[1, 1, 1],
+            [obs_shape[0], resize_h, resize_w],
+            dtype=self.observation_space.dtype,
+        )
+
+    def observation(self, observation):
+        return observation
+
+    def reset(self):
+        obs = gym.ObservationWrapper.reset(self)
+        return cv2.resize(
+            obs.swapaxes(0, 2), dsize=(self.resize_w, self.resize_h), interpolation=cv2.INTER_CUBIC
+        ).swapaxes(0, 2)
+
+    def step(self, actions):
+        obs, reward, done, info = gym.ObservationWrapper.step(self, actions)
+        return (
+            cv2.resize(
+                obs.swapaxes(0, 2), dsize=(self.resize_w, self.resize_h), interpolation=cv2.INTER_CUBIC
+            ).swapaxes(0, 2),
+            reward,
+            done,
+            info,
+        )
+
+
+def make_env(env_name, action_repeat=1, w=84, h=84, seed=-1, render_every=25):
+    if "Duckietown" in env_name:
+        import gym_duckietown
+
     # TODO add framestacking https://github.com/facebookresearch/drqv2/blob/7ad7e05fa44378c64998dc89586a9703b74531ab/dmc.py
     if env_name.startswith("dm-"):
         domain, task = env_name[3:].split("_")
         camera_id = dict(quadruped=2).get(domain, 0)
 
         env = dmc2gym.make(
-            domain_name,
-            task_name,
+            domain,
+            task,
             from_pixels=True,
             visualize_reward=False,
             width=w,
@@ -85,7 +157,7 @@ def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
         env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
     else:
         raise ValueError("Unknown environment name: {}".format(env_name))
-
+    env = ActionScale(env, new_min=-1.0, new_max=1.0)
     env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)

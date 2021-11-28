@@ -14,6 +14,7 @@ class WorldModelsConvEncoder(nn.Module):  # pylint: disable=too-many-instance-at
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 128, 4, stride=2)
         self.conv4 = nn.Conv2d(128, 256, 4, stride=2)
+        # self.conv5 = nn.Conv2d(256, 256, 2, stride=1) # for 84x84
         self.flatten = nn.Flatten()
 
     def forward(self, x):  # pylint: disable=arguments-differ
@@ -21,6 +22,7 @@ class WorldModelsConvEncoder(nn.Module):  # pylint: disable=too-many-instance-at
         x = self.activation(self.conv2(x))
         x = self.activation(self.conv3(x))
         x = self.activation(self.conv4(x))
+        # x = self.activation(self.conv5(x))
         x = self.flatten(x)
         return x
 

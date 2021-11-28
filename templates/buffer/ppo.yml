@@ -1,0 +1,13 @@
+
+buffer:
+  kwargs:
+    max_size:  4000
+    batch_size: 4000
+    num_workers: 4 #0
+    save_snapshot: True
+    nstep: 1 # 3
+    discount: 0.99
+    # lam (float): Lambda for GAE-Lambda. (Always between 0 and 1, close to 1.)
+    gae_lambda: 0.97
+    compute_adv: True
+    return_logp: True

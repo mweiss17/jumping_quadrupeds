@@ -1,0 +1,9 @@
+
+buffer:
+  kwargs:
+    max_size:  1000000
+    batch_size: 64
+    num_workers: 4 #0
+    save_snapshot: True
+    nstep: 3
+    discount: 0.99

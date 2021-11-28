@@ -12,6 +12,7 @@ setup(
     url="",
     install_requires=[
         "torch>=1.8",
+        'opencv-python',
         "tqdm",
         "attrs",
         "pillow",

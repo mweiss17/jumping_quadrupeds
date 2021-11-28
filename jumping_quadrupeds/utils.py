@@ -5,6 +5,9 @@ import numpy as np
 from torchvision.transforms import transforms
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
+from collections import defaultdict, namedtuple
+
+DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):

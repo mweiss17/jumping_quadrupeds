@@ -1,0 +1,26 @@
+agent:
+  name: drqv2
+  kwargs:
+    lr: 1e-4
+    critic_target_tau: 0.01
+    num_expl_steps: 2000
+    hidden_dim: 1024
+    feature_dim: 50
+    stddev_schedule: 'linear(1.0,0.1,500000)'
+    stddev_clip: 0.3
+    num_seed_frames: 1000
+    update_every_steps: 2
+
+
+
+buffer:
+  on_policy: False
+  kwargs:
+    max_size:  1000000
+    nstep: 3
+    batch_size: 64
+    fetch_every: 4000
+    num_workers: 0
+    save_snapshot: True
+    discount: 0.99
+    gae_lambda: 0.97

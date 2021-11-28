@@ -4,7 +4,7 @@ import numpy as np
 from speedrun import BaseExperiment, WandBMixin, IOMixin
 from jumping_quadrupeds.rl.buffer import PpoBuffer
 from jumping_quadrupeds.rl.networks import MLPSharedActorCritic
-from jumping_quadrupeds.rl.ppo import PPO
+from jumping_quadrupeds.rl.ppo.ppo import PPO
 
 
 class TrainPPO(BaseExperiment, WandBMixin, IOMixin):
