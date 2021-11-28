@@ -1,12 +1,8 @@
-import numpy as np
 import torch
-from gym.spaces import Box, Discrete
 from torch import nn
-from torch.distributions import Categorical
-from torch.nn import functional as F
+
 from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder
-from jumping_quadrupeds.rl.utils import mlp
-from jumping_quadrupeds.utils import layer_init, TruncatedNormal
+from jumping_quadrupeds.utils import TruncatedNormal
 
 
 class Actor(nn.Module):
@@ -32,11 +28,11 @@ class AbstractActorCritic(nn.Module):
     v: nn.Module  # value function/network
     encoder: nn.Module  # state encoder function/network
 
-    def step(self, obs):
+    def step(self, obs, eval_mode=False):
         """take an observation, return the action, value, log probability of the action under the current policy"""
         pass
 
-    def act(self, obs):
+    def act(self, obs, eval_mode=False):
         """same as the `step()` function but only return the action"""
         return self.step(obs)[0]
 
@@ -67,8 +63,7 @@ class CNNGaussianActor(Actor):
         self.low = action_space.low[0]
         self.high = action_space.high[0]
         self.linear = nn.Linear(64 * hidden_sizes, self.action_space.shape[0])
-        log_std = eval(log_std) * np.ones(self.action_space.shape[0], dtype=np.float32)
-        self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
+        self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
 
     def _distribution(self, obs):
         if len(obs.shape) == 3:
@@ -132,13 +127,16 @@ class ConvActorCritic(AbstractActorCritic):
         for param in self.v.encoder.parameters():
             param.requires_grad = False
 
-    def step(self, obs):
+    def step(self, obs, eval_mode=False):
 
         with torch.no_grad():
             if len(obs.shape) == 3:
                 obs = obs.unsqueeze(0)
             pi = self.pi._distribution(obs)
-            a = pi.sample()
+            if eval_mode:
+                a = pi.mean()
+            else:
+                a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             v = self.v(obs)
         return (

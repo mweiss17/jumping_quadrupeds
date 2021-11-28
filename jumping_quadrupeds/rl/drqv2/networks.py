@@ -1,3 +1,8 @@
+import torch
+import torch.nn as nn
+from jumping_quadrupeds.utils import TruncatedNormal
+from jumping_quadrupeds.rl import utils
+
 class Encoder(nn.Module):
     def __init__(self, obs_shape):
         super().__init__()
@@ -50,7 +55,7 @@ class Actor(nn.Module):
         mu = torch.tanh(mu)
         std = torch.ones_like(mu) * std
 
-        dist = utils.TruncatedNormal(mu, std)
+        dist = TruncatedNormal(mu, std)
         return dist
 
 

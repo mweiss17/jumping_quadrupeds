@@ -1,3 +1,8 @@
+import numpy as np
+import torch.nn as nn
+import torch
+import torch.nn.functional as F
+
 class RandomShiftsAug(nn.Module):
     def __init__(self, pad):
         super().__init__()

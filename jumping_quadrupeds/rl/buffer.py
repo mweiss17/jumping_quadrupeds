@@ -1,17 +1,13 @@
 import io
-import os
 import torch
 import random
 import datetime
 import traceback
-from collections import defaultdict, namedtuple
 import numpy as np
-import torch
-import torch.nn as nn
 from torch.utils.data import IterableDataset
-from pathlib import Path
+from collections import defaultdict
 
-from jumping_quadrupeds.rl.utils import combined_shape, discount_cumsum
+from jumping_quadrupeds.rl.utils import discount_cumsum
 
 
 def episode_len(episode):
@@ -45,7 +41,7 @@ class ReplayBufferStorage:
     def __len__(self):
         return self._num_transitions
 
-    def add(self, step, eps_done):
+    def add(self, step):
         # we have to do this because we don't know the discount from dm_control, assume 1.0
         if not step.get("discount"):
             step["discount"] = 1.0
@@ -56,16 +52,19 @@ class ReplayBufferStorage:
             assert spec.shape == value.shape and spec.dtype == value.dtype
             self._current_episode[spec.name].append(value)
 
-        if eps_done:
-            self.finish_episode()
-
     def finish_episode(self):
         episode = dict()
         for spec in self._data_specs:
             value = self._current_episode[spec.name]
             episode[spec.name] = np.array(value, spec.dtype)
         self._current_episode = defaultdict(list)
-        self._store_episode(episode)
+        eps_idx = self._num_episodes
+        eps_len = episode_len(episode)
+        self._num_episodes += 1
+        self._num_transitions += eps_len
+        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
+        save_episode(episode, self._replay_dir / eps_fn)
 
     def _preload(self):
         self._num_episodes = 0
@@ -75,14 +74,6 @@ class ReplayBufferStorage:
             self._num_episodes += 1
             self._num_transitions += int(eps_len)
 
-    def _store_episode(self, episode):
-        eps_idx = self._num_episodes
-        eps_len = episode_len(episode)
-        self._num_episodes += 1
-        self._num_transitions += eps_len
-        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-        eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
-        save_episode(episode, self._replay_dir / eps_fn)
 
 
 class ReplayBuffer(IterableDataset):
@@ -109,7 +100,10 @@ class ReplayBuffer(IterableDataset):
         self._save_snapshot = save_snapshot
 
     def _sample_episode(self):
-        eps_fn = random.choice(self._episode_fns)
+        try:
+            eps_fn = random.choice(self._episode_fns)
+        except IndexError as e:
+            raise Exception("Need to have finished at least one episode. Increase num_seed_frames.")
         return self._episodes[eps_fn]
 
     def _store_episode(self, eps_fn):
@@ -163,9 +157,9 @@ class ReplayBuffer(IterableDataset):
 
 
 class OffPolicyReplayBuffer(ReplayBuffer):
-    def __init__(self, nstep=None, **kwargs):
-        super().__init__(**kwargs)
-        self._nstep = nstep
+    def __init__(self, replay_dir=None, **kwargs):
+        super().__init__(replay_dir=replay_dir, **kwargs)
+        self._nstep = kwargs.get("nstep")
 
     def _sample(self):
         try:
@@ -177,6 +171,7 @@ class OffPolicyReplayBuffer(ReplayBuffer):
         episode = self._sample_episode()
         # add +1 for the first dummy transition
         idx = np.random.randint(0, episode_len(episode) - self._nstep + 1) + 1
+
         obs = episode["obs"][idx - 1]
         action = episode["act"][idx]
         next_obs = episode["obs"][idx + self._nstep - 1]
@@ -192,7 +187,7 @@ class OffPolicyReplayBuffer(ReplayBuffer):
             "act": action,
             "rew": reward,
             "discount": discount,
-            "next_obs": next_obs,
+            "next_obs": torch.as_tensor(next_obs, dtype=torch.float32) / 255,
         }
 
         return sample
@@ -216,21 +211,16 @@ class OnPolicyReplayBuffer(ReplayBuffer):
             self.total_idx = 0
         self._samples_since_last_fetch += 1
         try:
-
             episode = self._episodes[self._episode_fns[self.eps_idx]]
-        except Exception as e:
-            print(e)
+        except Exception:
             breakpoint()
         if self.step_idx == 0:
             episode = self.compute_rets_and_advs(episode)
 
-        obs = episode["obs"][self.step_idx]
-        action = episode["act"][self.step_idx]
-        reward = episode["rew"][self.step_idx]
         sample = {
-            "obs": torch.as_tensor(obs, dtype=torch.float32) / 255,
-            "act": action,
-            "rew": reward,
+            "obs": torch.as_tensor(episode["obs"][self.step_idx], dtype=torch.float32) / 255,
+            "act": episode["act"][self.step_idx],
+            "rew": episode["rew"][self.step_idx],
             "adv": episode["adv"][self.step_idx],
             "ret": episode["ret"][self.step_idx],
             "logp": episode["logp"][self.step_idx],

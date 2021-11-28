@@ -81,7 +81,7 @@ class ActionScale(gym.core.Wrapper):
         return self.env.step(self._transform(action))
 
 
-def make_env(env_name, action_repeat=1, w=64, h=64, seed=-1, render_every=25):
+def make_env(env_name, action_repeat=1, w=84, h=84, seed=-1, render_every=25):
     # TODO add framestacking https://github.com/facebookresearch/drqv2/blob/7ad7e05fa44378c64998dc89586a9703b74531ab/dmc.py
     if env_name.startswith("dm-"):
         domain, task = env_name[3:].split("_")

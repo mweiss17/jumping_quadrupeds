@@ -2,13 +2,12 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 from jumping_quadrupeds.rl.utils import soft_update_params, to_torch, schedule
-
+from jumping_quadrupeds.rl.drqv2.networks import Actor, Critic, Encoder
+from jumping_quadrupeds.rl.drqv2.augs import RandomShiftsAug
 
 class DrQV2Agent:
     def __init__(
@@ -24,15 +23,15 @@ class DrQV2Agent:
         update_every_steps,
         stddev_schedule,
         stddev_clip,
-        use_tb,
+            **kwargs
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
-        self.use_tb = use_tb
         self.num_expl_steps = num_expl_steps
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
+        self.use_tb = False
 
         # models
         self.encoder = Encoder(obs_shape).to(device)
@@ -76,7 +75,7 @@ class DrQV2Agent:
             action = dist.sample(clip=None)
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
-        return action.cpu().numpy()[0]
+        return action.detach().cpu().numpy()[0]
 
     def update_critic(self, obs, action, reward, discount, next_obs, step):
         metrics = dict()
@@ -134,11 +133,8 @@ class DrQV2Agent:
     def update(self, replay_iter, step):
         metrics = dict()
 
-        if step % self.update_every_steps != 0:
-            return metrics
-
         batch = next(replay_iter)
-        obs, action, reward, discount, next_obs = to_torch(batch, self.device)
+        obs, action, reward, discount, next_obs = to_torch(batch.values(), self.device)
 
         # augment
         obs = self.aug(obs.float())
@@ -163,3 +159,33 @@ class DrQV2Agent:
         soft_update_params(self.critic, self.critic_target, self.critic_target_tau)
 
         return metrics
+
+    def save_checkpoint(self, exp_dir, epoch):
+        torch.save(
+            self.actor.state_dict(),
+            f"{exp_dir}/Weights/actor-{epoch}.pt",
+        )
+        torch.save(
+            self.critic.state_dict(),
+            f"{exp_dir}/Weights/critic-{epoch}.pt",
+        )
+        torch.save(
+            self.critic_target.state_dict(),
+            f"{exp_dir}/Weights/critic_target-{epoch}.pt",
+        )
+        torch.save(
+            self.encoder.state_dict(),
+            f"{exp_dir}/Weights/encoder-{epoch}.pt",
+        )
+        torch.save(
+            self.encoder_opt.state_dict(),
+            f"{exp_dir}/Weights/encoder_opt-{epoch}.pt",
+        )
+        torch.save(
+            self.actor_opt.state_dict(),
+            f"{exp_dir}/Weights/actor_opt-{epoch}.pt",
+        )
+        torch.save(
+            self.critic_opt.state_dict(),
+            f"{exp_dir}/Weights/critic_opt-{epoch}.pt",
+        )
