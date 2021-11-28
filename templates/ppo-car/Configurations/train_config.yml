@@ -60,7 +60,7 @@ agent:
     # pi_optim_checkpoint: experiments/ppo/Weights/pi-optim-40.pt
     # vf_optim_checkpoint: experiments/ppo/Weights/vf-optim-40.pt
     shared_encoder: False
-    conv_ac_hidden_scaling: 16
+    conv_ac_hidden_scaling: 36 # 36 if 3x84x84 elif obs_shape is 3x64x64 then 16
     log_std: 0.5
     freeze_encoder: False
     update_every_steps: 4000
