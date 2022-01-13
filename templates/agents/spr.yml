@@ -1,0 +1,149 @@
+agent:
+  name: spr
+#  kwargs:
+#    eps_init:  1. # defaults from SPR paper
+#    eps_final: 0.
+#    eps_eval:  0.001
+
+model:
+  kwargs:
+    dueling: 1
+    noisy_nets: 1
+    noisy_nets_std: 0.5
+    imagesize: 84
+    jumps: 5
+    dynamics_blocks: 0
+    spr: 1
+    momentum_encoder: 1
+    shared_encoder: 0
+    local_spr: 0
+    global_spr: 1
+    distributional: 1
+    renormalize: 1
+    norm_type: 'bn' # choices=["bn", "ln", "in", "none"]
+    augmentation: ["shift", "intensity"] # choices=["none", "rrc", "affine", "crop", "blur", "shift", "intensity"],
+    q_l1_type: ["value", "advantage"] # choices=["noisy", "value", "advantage", "relu"]
+    dropout: 0. # prob of dropout in conv net
+    time_offset: 0
+    aug_prob: 1.
+    target_augmentation: 1.
+    eval_augmentation: 0.
+    classifier: "q_l1" # choices=["mlp", "bilinear", "q_l1", "q_l2", "none"],
+    final_classifier: "linear" # style of nce classifier choices=["mlp", "linear", "none"], h
+    momentum_tau: 0.01
+    dqn_hidden_size: 256
+    model_rl: 0.
+    residual_tm: 0.
+
+buffer:
+  on_policy: False
+  kwargs:
+    max_size:  1000000
+    nstep: 3
+    batch_size: 64
+    fetch_every: 4000
+    num_workers: 0
+    save_snapshot: True
+    discount: 0.99
+    gae_lambda: 0.97
+
+
+optim:
+  kwargs:
+    eps: 0.00015
+
+algo:
+  kwargs:
+      min_steps_learn: 2000
+      n_step_return: 100000
+      batch_size: 32
+      learning_rate: 0.0001
+      replay_ratio: 64
+      target_update_interval: 1
+      target_update_tau: 1.
+      eps_steps: 2001
+      clip_grad_norm: 10.
+      pri_alpha: 0.5
+      pri_beta_steps: 10e4
+      model_rl_weight: 0.
+      reward_loss_weight: 0
+      model_spr_weight: 5.
+      t0_spr_loss_weight: 0.
+      time_offset: 0
+      distributional: 1
+      delta_clip: 1.
+      prioritized_replay: 1
+
+
+#    # TODO: Use Hydra to manage configs
+#    config = configs['ernbw']
+#    config['env']['game'] = game
+#    config["env"]["grayscale: grayscale
+#    config["env"]["num_img_obs: framestack
+#    config["eval_env"]["game"] = config["env"]["game"]
+#    config["eval_env"]["grayscale: grayscale
+#    config["eval_env"]["num_img_obs: framestack
+#    config['env']['imagesize: imagesize
+#    config['eval_env']['imagesize: imagesize
+#    config['env']['seed: seed
+#    config['eval_env']['seed: seed
+#    config["model"]["dueling"] = bool(args.dueling)
+#    min_steps_learn: min_steps_learn
+#    n_step_return: n_step
+#    batch_size: batch_size
+#    learning_rate"] = 0.0001
+#    replay_ratio: replay_ratio
+#    target_update_interval: target_update_interval
+#    target_update_tau: target_update_tau
+#    eps_steps: eps_steps
+#    clip_grad_norm: max_grad_norm
+#    pri_alpha'] = 0.5
+#    pri_beta_steps'] = int(10e4)
+#    config['optim']['eps'] = 0.00015
+#    config["sampler"]["eval_max_trajectories"] = 100
+#    config["sampler"]["eval_n_envs"] = 100
+#    config["sampler"]["eval_max_steps"] = 100*28000  # 28k is just a safe ceiling
+#    config['sampler']['batch_B: batch_b
+#    config['sampler']['batch_T: batch_t
+#
+#    config['agent']['eps_init: eps_init
+#    config['agent']['eps_final: eps_final
+#    config["model"]["noisy_nets_std: noisy_nets_std
+#
+#    if args.noisy_nets:
+#        config['agent']['eps_eval'] = 0.001
+#
+#    # New SPR Arguments
+#    config["model"]["imagesize: imagesize
+#    config["model"]["jumps: jumps
+#    config["model"]["dynamics_blocks: dynamics_blocks
+#    config["model"]["spr: spr
+#    config["model"]["noisy_nets: noisy_nets
+#    config["model"]["momentum_encoder: momentum_encoder
+#    config["model"]["shared_encoder: shared_encoder
+#    config["model"]["local_spr: local_spr
+#    config["model"]["global_spr: global_spr
+#    config["model"]["distributional: distributional
+#    config["model"]["renormalize: renormalize
+#    config["model"]["norm_type: norm_type
+#    config["model"]["augmentation: augmentation
+#    config["model"]["q_l1_type: q_l1_type
+#    config["model"]["dropout: dropout
+#    config["model"]["time_offset: time_offset
+#    config["model"]["aug_prob: aug_prob
+#    config["model"]["target_augmentation: target_augmentation
+#    config["model"]["eval_augmentation: eval_augmentation
+#    config["model"]["classifier: classifier
+#    config["model"]["final_classifier: final_classifier
+#    config['model']['momentum_tau: momentum_tau
+#    config["model"]["dqn_hidden_size: dqn_hidden_size
+#    config["model"]["model_rl: model_rl_weight
+#    config["model"]["residual_tm: residual_tm
+#    model_rl_weight: model_rl_weight
+#    reward_loss_weight: reward_loss_weight
+#    model_spr_weight: model_spr_weight
+#    t0_spr_loss_weight: t0_spr_loss_weight
+#    time_offset: time_offset
+#    distributional: distributional
+#    delta_clip: delta_clip
+#    prioritized_replay: prioritized_replay

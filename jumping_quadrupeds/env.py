@@ -151,13 +151,19 @@ def make_env(env_name, action_repeat=1, w=84, h=84, seed=-1, render_every=25):
             frame_skip=action_repeat,
             camera_id=camera_id,
         )
+        env = ActionScale(env, new_min=-1.0, new_max=1.0)
     elif env_name.startswith("gym-"):
         env_name = env_name[4:]
         env = gym.make(env_name)
         env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
+        env = ActionScale(env, new_min=-1.0, new_max=1.0)
+
+    elif env_name.startswith("atari-"):
+        env_name = env_name[6:]
+        env = gym.make(env_name)
+        env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
     else:
         raise ValueError("Unknown environment name: {}".format(env_name))
-    env = ActionScale(env, new_min=-1.0, new_max=1.0)
     env = VideoWrapper(env, update_freq=render_every)
     if seed >= 0:
         env.seed(seed)

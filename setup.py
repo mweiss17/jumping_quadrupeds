@@ -23,6 +23,7 @@ setup(
         "moviepy",
         "imageio",
         "rich",
+        "gym",
         "submitit",
         "gym @ git+https://git@github.com/tesfaldet/gym@master#egg=gym",
         "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
@@ -34,6 +35,7 @@ setup(
             "dm_control @ git+git://github.com/deepmind/dm_control.git",
             "dmc2gym @  git+git://github.com/denisyarats/dmc2gym.git",
             "mujoco_py",
-        ]
+        ],
+        "atari": ["gym[atari]"],
     },
 )

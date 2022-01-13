@@ -75,6 +75,33 @@ class TrainPPOConv(
                 self.device,
                 **self.get("agent/kwargs"),
             )
+        elif self.get("agent/name") == "spr":
+            from jumping_quadrupeds.rl.spr.agent import SPRAgent
+            from rlpyt.agents.pg.gaussian import GaussianPgAgent
+            from jumping_quadrupeds.rl.spr.model import SPRCatDqnModel
+            from jumping_quadrupeds.rl.spr.algos import SPRCategoricalDQN
+            self.agent = SPRAgent(ModelCls=GaussianPgAgent, model_kwargs={})#self.get("model/kwargs"))# , **self.get("agent/kwargs"))
+            from collections import namedtuple
+            EnvSpaces = namedtuple("EnvSpaces", ["observation", "action"])
+            env_space = EnvSpaces(
+                observation=self.env.observation_space,
+                action=self.env.action_space,
+            )
+            breakpoint()
+            self.agent.initialize(env_space, share_memory=False, global_B=1, env_ranks=1)
+            # self.agent.to_device(None if self.device == "cpu" else self.device)
+            self.algo = SPRCategoricalDQN(optim_kwargs=self.get("optim/kwargs"), jumps=self.get("model/kwargs/jumps"), **self.get("algo/kwargs"))  # Run with defaults.
+            self.algo.initialize(
+                agent=self.agent,
+                n_itr=self.get("total_steps"),
+                batch_spec=self.sampler.batch_spec,
+                mid_batch_reset=self.sampler.mid_batch_reset,
+                examples=examples,
+                world_size=1,
+                rank=1,
+            )
+
+
 
     @property
     def replay_iter(self):
@@ -166,3 +193,6 @@ if __name__ == "__main__":
         ]
 
     TrainPPOConv().run()
+#  Xvfb :$SLURM_JOB_ID -screen 0 1024x768x24 -ac -noreset &> xvfb.log
+# export DISPLAY=:$SLURM_JOB_ID
+# submit scripts/rl-tests/03-ppo-car.py ~/scratch/experiments/drqv2-scratch-1 --inherit templates/ppo-car --macro templates/agents/drqv2.yml  --config.use_wandb True --config._wandb_run_name drqv2-scratch-1
