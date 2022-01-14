@@ -12,8 +12,8 @@ from jumping_quadrupeds.rl.drqv2.augs import RandomShiftsAug
 class DrQV2Agent:
     def __init__(
         self,
-        obs_shape,
-        action_shape,
+        obs_space,
+        action_space,
         device,
         lr,
         feature_dim,
@@ -34,16 +34,16 @@ class DrQV2Agent:
         self.use_tb = False
 
         # models
-        self.encoder = Encoder(obs_shape).to(device)
+        self.encoder = Encoder(obs_space).to(device)
         self.actor = Actor(
-            self.encoder.repr_dim, action_shape, feature_dim, hidden_dim
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
         ).to(device)
 
         self.critic = Critic(
-            self.encoder.repr_dim, action_shape, feature_dim, hidden_dim
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
         ).to(device)
         self.critic_target = Critic(
-            self.encoder.repr_dim, action_shape, feature_dim, hidden_dim
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
         ).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
@@ -91,11 +91,11 @@ class DrQV2Agent:
         Q1, Q2 = self.critic(obs, action)
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
-        if self.use_tb:
-            metrics["critic_target_q"] = target_Q.mean().item()
-            metrics["critic_q1"] = Q1.mean().item()
-            metrics["critic_q2"] = Q2.mean().item()
-            metrics["critic_loss"] = critic_loss.item()
+        metrics["critic_target_q"] = target_Q.mean().item()
+        metrics["critic_q1"] = Q1.mean().item()
+        metrics["critic_q2"] = Q2.mean().item()
+        metrics["critic_loss"] = critic_loss.item()
+        metrics["action_noise_std_dev"] = stddev.item()
 
         # optimize encoder and critic
         self.encoder_opt.zero_grad(set_to_none=True)
@@ -123,10 +123,20 @@ class DrQV2Agent:
         actor_loss.backward()
         self.actor_opt.step()
 
-        if self.use_tb:
-            metrics["actor_loss"] = actor_loss.item()
-            metrics["actor_logprob"] = log_prob.mean().item()
-            metrics["actor_ent"] = dist.entropy().sum(dim=-1).mean().item()
+        metrics["actor_loss"] = actor_loss.item()
+        metrics["actor_logprob"] = log_prob.mean().item()
+        metrics["actor_ent"] = dist.entropy().sum(dim=-1).mean().item()
+        action_mean = action.detach().mean(axis=0).cpu().numpy()
+        action_std = action.detach().std(axis=0).cpu().numpy()
+        metrics.update({
+            "act-mean-turn": action_mean[0],
+            "act-mean-gas": action_mean[1],
+            "act-mean-brake": action_mean[2],
+            "act-std-turn": action_std[0],
+            "act-std-gas": action_std[1],
+            "act-std-brake": action_std[2]
+        })
+
 
         return metrics
 
@@ -139,6 +149,7 @@ class DrQV2Agent:
         # augment
         obs = self.aug(obs.float())
         next_obs = self.aug(next_obs.float())
+
         # encode
         obs = self.encoder(obs)
         with torch.no_grad():

@@ -90,7 +90,7 @@ class CNNCritic(nn.Module):
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
         self,
-        observation_space,
+        stddev_clip,
         action_space,
         shared_encoder=False,
         hidden_sizes=16,

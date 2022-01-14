@@ -119,7 +119,7 @@ class PPO:
 
     def update(self, replay_iter, step):
         """Updates the policy and value function based on the latest replay buffer"""
-
+        metrics = {}
         data = next(replay_iter)
 
         self.ac.train()
@@ -150,8 +150,7 @@ class PPO:
             adv_std = pi_info["adv"].detach().std().cpu().numpy()
             ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
             ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
-            self.wandb_log(
-                **{
+            metrics = {
                     "act-mean-turn": action_mean[0],
                     "act-mean-gas": action_mean[1],
                     "act-mean-brake": action_mean[2],
@@ -173,7 +172,8 @@ class PPO:
                     "ratio-mean": ratio_mean,
                     "ratio-std": ratio_std,
                 }
-            )
+        return metrics
+
 
     def save_checkpoint(self, exp_dir, epoch):
         torch.save(

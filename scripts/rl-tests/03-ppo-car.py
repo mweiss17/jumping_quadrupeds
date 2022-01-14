@@ -70,8 +70,8 @@ class TrainPPOConv(
         elif self.get("agent/name") == "drqv2":
             from jumping_quadrupeds.rl.drqv2.agent import DrQV2Agent
             self.agent = DrQV2Agent(
-                self.env.observation_space.shape,
-                self.env.action_space.shape,
+                self.env.observation_space,
+                self.env.action_space,
                 self.device,
                 **self.get("agent/kwargs"),
             )
@@ -107,10 +107,13 @@ class TrainPPOConv(
 
     def write_logs(self):
         if self.log_now:
+            ep_rets = list(dict(self.episode_returns).values())
+            ep_rets = np.array([xi + [0] * (self.get("max_ep_len") - len(xi)) for xi in ep_rets])
+            full_episodic_return = ep_rets.sum(axis=1)
             self.wandb_log(
                 **{
-                    "Episode mean reward": np.mean(list(dict(self.episode_returns)).values()),
-                    "Episode return": self.episode_returns[self.ep_idx, -1],
+                    "Episode mean reward": np.mean(full_episodic_return),
+                    "Episode return": full_episodic_return[-1],
                     "Episode mean length": np.mean([len(ep) for ep in self.episode_returns.values()]),
                     "Number of Episodes": len(self.episode_returns),
                 }
@@ -122,7 +125,6 @@ class TrainPPOConv(
 
     @register_default_dispatch
     def __call__(self):
-
         obs = self.env.reset()
 
         for _ in trange(self.get("total_steps")):
@@ -144,7 +146,8 @@ class TrainPPOConv(
 
             # Update the agent
             if self.update_now:
-                self.agent.update(self.replay_iter, self.step)
+                metrics = self.agent.update(self.replay_iter, self.step)
+                self.wandb_log(**metrics)
 
             # Finish the episode
             if done or self.episode_timeout:
@@ -152,6 +155,7 @@ class TrainPPOConv(
                 self.write_logs()
                 self.ep_idx += 1
                 obs = self.env.reset()
+
 
 
 
