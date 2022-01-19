@@ -6,7 +6,7 @@ from tqdm import trange
 from collections import defaultdict
 from pathlib import Path
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
-from jumping_quadrupeds.rl.buffer import make_replay_loader, ReplayBufferStorage
+from jumping_quadrupeds.rl.buffer import make_replay_loader, ReplayBufferStorage, OffPolicySequentialReplayBuffer
 from jumping_quadrupeds.env import make_env
 from jumping_quadrupeds.utils import DataSpec
 
@@ -75,6 +75,16 @@ class TrainPPOConv(
                 self.device,
                 **self.get("agent/kwargs"),
             )
+        elif self.get("agent/name") == "spr":
+            from jumping_quadrupeds.rl.spr.agent import SPRAgent
+            self.agent = SPRAgent(
+                self.env.observation_space,
+                self.env.action_space,
+                self.device,
+                self.get("buffer/kwargs/jumps"),
+                **self.get("agent/kwargs"),
+            )
+
 
     @property
     def replay_iter(self):

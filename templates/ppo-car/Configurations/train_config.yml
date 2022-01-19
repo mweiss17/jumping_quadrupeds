@@ -11,7 +11,7 @@ max_ep_len: 1000
 total_steps: 1000000
 
 # save_freq (int): save policy every n epochs
-save_freq: 10
+save_freq: 10000
 
 # log_ep_freq (int): log rewards every n episodes
 log_ep_freq: 1

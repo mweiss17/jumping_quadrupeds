@@ -31,7 +31,6 @@ class DrQV2Agent:
         self.num_expl_steps = num_expl_steps
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
-        self.use_tb = False
 
         # models
         self.encoder = Encoder(obs_space).to(device)
@@ -92,6 +91,8 @@ class DrQV2Agent:
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
         metrics["critic_target_q"] = target_Q.mean().item()
+        metrics["critic_reward_producing_critic_target_q"] = reward.mean().item()
+        metrics["target_V"] = target_V.mean().item()
         metrics["critic_q1"] = Q1.mean().item()
         metrics["critic_q2"] = Q2.mean().item()
         metrics["critic_loss"] = critic_loss.item()
@@ -155,8 +156,7 @@ class DrQV2Agent:
         with torch.no_grad():
             next_obs = self.encoder(next_obs)
 
-        if self.use_tb:
-            metrics["batch_reward"] = reward.mean().item()
+        metrics["batch_reward"] = reward.mean().item()
 
         # update critic
         metrics.update(

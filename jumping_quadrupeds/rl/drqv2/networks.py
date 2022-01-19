@@ -24,7 +24,8 @@ class Encoder(nn.Module):
         self.apply(utils.weight_init)
 
     def forward(self, obs):
-        obs = obs / 255.0 - 0.5
+        if obs.dtype == torch.uint8:
+            obs = obs.float() / 255.0 - 0.5
         h = self.convnet(obs)
         h = h.view(h.shape[0], -1)
         return h
