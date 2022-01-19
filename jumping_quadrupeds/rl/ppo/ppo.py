@@ -84,6 +84,8 @@ class PPO:
     def compute_loss_pi(self, data):
         """Computes policy loss"""
         obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
+        obs = preprocess_obs(obs)
+
         # Policy loss
 
         pi, logp = self.ac.pi(obs, act)
@@ -114,6 +116,7 @@ class PPO:
     def compute_loss_v(self, data):
         """Computes value loss"""
         obs, ret = data["obs"], data["ret"]
+        obs = preprocess_obs(obs)
         value_estimate = self.ac.v(obs)
         return value_estimate, ((value_estimate - ret) ** 2).mean()
 
@@ -200,9 +203,7 @@ class PPO:
 
 
     def act(self, obs, step, eval_mode):
-        obs = torch.as_tensor(obs / 255, device=self.device, dtype=torch.float32)
         if step < self.num_expl_steps:
             return torch.zeros(self.action_space.shape[0]).uniform_(-1., 1.)
         else:
             return self.ac.act(obs, eval_mode)
-        return action

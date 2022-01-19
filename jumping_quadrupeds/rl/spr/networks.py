@@ -25,7 +25,6 @@ class Encoder(nn.Module):
         self.apply(utils.weight_init)
 
     def forward(self, obs, flatten=True):
-        obs = obs / 255.0 - 0.5
         h = self.convnet(obs)
         if flatten:
             h = h.view(h.shape[0], -1)

@@ -4,10 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 import torch.nn.functional as F
-
+import numpy as np
 from jumping_quadrupeds.rl.utils import soft_update_params, to_torch, schedule
 from jumping_quadrupeds.rl.drqv2.networks import Actor, Critic, Encoder
 from jumping_quadrupeds.rl.drqv2.augs import RandomShiftsAug
+from jumping_quadrupeds.utils import preprocess_obs
 
 class DrQV2Agent:
     def __init__(
@@ -74,7 +75,10 @@ class DrQV2Agent:
             action = dist.sample(clip=None)
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
-        return action.detach().cpu().numpy()[0]
+        value = np.array([0.], dtype=np.float32)
+        log_p = dist.log_prob(action).detach().cpu().numpy()[0]
+        action = action.detach().cpu().numpy()[0]
+        return action, value, log_p
 
     def update_critic(self, obs, action, reward, discount, next_obs, step):
         metrics = dict()
@@ -144,12 +148,15 @@ class DrQV2Agent:
     def update(self, replay_iter, step):
         metrics = dict()
 
-        batch = next(replay_iter)
-        obs, action, reward, discount, next_obs = to_torch(batch.values(), self.device)
+        obs, action, reward, discount, next_obs = next(replay_iter).values()
+
+        obs = preprocess_obs(obs)
+        next_obs = preprocess_obs(next_obs)
+        action, reward, discount = torch.tensor(action), torch.tensor(reward), torch.tensor(discount)
 
         # augment
-        obs = self.aug(obs.float())
-        next_obs = self.aug(next_obs.float())
+        obs = self.aug(obs)
+        next_obs = self.aug(next_obs)
 
         # encode
         obs = self.encoder(obs)

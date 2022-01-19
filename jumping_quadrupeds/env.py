@@ -95,7 +95,9 @@ class PyTorchObsWrapper(gym.ObservationWrapper):
         )
 
     def observation(self, observation):
-        return observation.transpose(2, 1, 0)
+        observation = observation.transpose(2, 0, 1)
+        return observation
+
 
 
 class ResizeWrapper(gym.ObservationWrapper):
@@ -116,9 +118,10 @@ class ResizeWrapper(gym.ObservationWrapper):
 
     def reset(self):
         obs = gym.ObservationWrapper.reset(self)
-        return cv2.resize(
+        obs = cv2.resize(
             obs.swapaxes(0, 2), dsize=(self.resize_w, self.resize_h), interpolation=cv2.INTER_CUBIC
         ).swapaxes(0, 2)
+        return obs
 
     def step(self, actions):
         obs, reward, done, info = gym.ObservationWrapper.step(self, actions)
@@ -132,7 +135,7 @@ class ResizeWrapper(gym.ObservationWrapper):
         )
 
 
-def make_env(env_name, action_repeat=1, w=84, h=84, seed=-1, render_every=25):
+def make_env(env_name, action_repeat=1, w=84, h=84, seed=-1, render_every=2):
     if "Duckietown" in env_name:
         import gym_duckietown
 

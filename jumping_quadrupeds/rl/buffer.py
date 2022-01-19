@@ -183,11 +183,11 @@ class OffPolicyReplayBuffer(ReplayBuffer):
             discount *= episode["discount"][idx + i] * self._discount
 
         sample = {
-            "obs": torch.as_tensor(obs, dtype=torch.float32) / 255,
+            "obs": obs,
             "act": action,
             "rew": reward,
             "discount": discount,
-            "next_obs": torch.as_tensor(next_obs, dtype=torch.float32) / 255,
+            "next_obs": next_obs,
         }
 
         return sample
@@ -214,7 +214,7 @@ class OffPolicySequentialReplayBuffer(ReplayBuffer):
         discount = np.ones_like(episode["discount"][idx: idx + self.jumps])
 
         sample = {
-            "obs": torch.as_tensor(obs, dtype=torch.float32) / 255,
+            "obs": obs,
             "act": action,
             "rew": reward,
             "discount": discount,
@@ -248,7 +248,7 @@ class OnPolicyReplayBuffer(ReplayBuffer):
             episode = self.compute_rets_and_advs(episode)
 
         sample = {
-            "obs": torch.as_tensor(episode["obs"][self.step_idx], dtype=torch.float32) / 255,
+            "obs": episode["obs"][self.step_idx],
             "act": episode["act"][self.step_idx],
             "rew": episode["rew"][self.step_idx],
             "adv": episode["adv"][self.step_idx],

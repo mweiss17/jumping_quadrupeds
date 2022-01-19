@@ -8,7 +8,7 @@ from pathlib import Path
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.rl.buffer import make_replay_loader, ReplayBufferStorage, OffPolicySequentialReplayBuffer
 from jumping_quadrupeds.env import make_env
-from jumping_quadrupeds.utils import DataSpec
+from jumping_quadrupeds.utils import DataSpec, preprocess_obs
 
 
 
@@ -139,14 +139,19 @@ class TrainPPOConv(
 
         for _ in trange(self.get("total_steps")):
             # Rollout
-            action, val, logp = self.agent.act(obs, self.step, eval_mode=True)
+            action, val, logp = self.agent.act(preprocess_obs(obs), self.step, eval_mode=False)
             next_obs, reward, done, misc = self.env.step(action)
 
             self.episode_returns[self.ep_idx].append(reward)
             self.next_step()
-
             self.replay_storage.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
 
+            # self.wandb_log(**{
+            #     "act-turn": action[0],
+            #     "act-gas": action[1],
+            #     "act-brake": action[2],
+            # })
+            #
             # Update obs (critical!)
             obs = next_obs
 

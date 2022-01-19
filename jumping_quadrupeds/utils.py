@@ -48,3 +48,10 @@ class TruncatedNormal(pyd.Normal):
             eps = torch.clamp(eps, -clip, clip)
         x = self.loc + eps
         return self._clamp(x)
+
+def preprocess_obs(obs):
+    assert obs.dtype == np.uint8 or obs.dtype == torch.uint8
+    if obs.dtype == np.uint8:
+        obs = torch.tensor(obs.copy(), dtype=torch.float32)
+    obs = obs / 255.0
+    return obs
