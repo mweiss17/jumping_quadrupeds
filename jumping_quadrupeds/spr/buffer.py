@@ -1,4 +1,4 @@
-from jumping_quadrupeds.rl.buffer import ReplayBuffer
+from jumping_quadrupeds.buffer import ReplayBuffer
 
 class OffPolicySequentialReplayBuffer(ReplayBuffer):
     def __init__(self, replay_dir=None, **kwargs):

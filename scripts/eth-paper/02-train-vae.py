@@ -15,8 +15,8 @@ from torch.utils.data import RandomSampler, DataLoader, Subset
 # to add jumping_quadrupeds to python path
 sys.path.append(os.getcwd())
 
-from jumping_quadrupeds.models.vae import ConvVAE
-from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder, FlosConvEncoder
+from jumping_quadrupeds.eth.vae import ConvVAE
+from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder, FlosConvEncoder
 from jumping_quadrupeds.dataset import Hdf5ImgDataset
 from jumping_quadrupeds.utils import common_img_transforms, abs_path
 

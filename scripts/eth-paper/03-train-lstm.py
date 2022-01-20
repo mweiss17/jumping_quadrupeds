@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 
 from jumping_quadrupeds.dataset import Hdf5ImgSeqDataset
-from jumping_quadrupeds.models.lstm import EthLstm
-from jumping_quadrupeds.models.vae import ConvVAE
-from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder, FlosConvEncoder
+from jumping_quadrupeds.eth.lstm import EthLstm
+from jumping_quadrupeds.eth.vae import ConvVAE
+from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder, FlosConvEncoder
 from jumping_quadrupeds.utils import common_img_transforms, abs_path
 
 

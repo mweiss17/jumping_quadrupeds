@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder
+from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.utils import TruncatedNormal
 
 
