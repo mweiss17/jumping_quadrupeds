@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch.optim import Adam
 from tqdm import tqdm
-from jumping_quadrupeds.rl.networks import ConvActorCritic
+from jumping_quadrupeds.rl.ppo.networks import ConvActorCritic
 
 
 class PPO:

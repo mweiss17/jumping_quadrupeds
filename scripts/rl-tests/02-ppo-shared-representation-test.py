@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from speedrun import BaseExperiment, WandBMixin, IOMixin
 from jumping_quadrupeds.rl.buffer import PpoBuffer
-from jumping_quadrupeds.rl.networks import MLPSharedActorCritic
+from jumping_quadrupeds.rl.ppo.networks import MLPSharedActorCritic
 from jumping_quadrupeds.rl.ppo.ppo import PPO
 
 
