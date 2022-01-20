@@ -13,7 +13,7 @@ from kornia.filters import GaussianBlur2d
 
 from jumping_quadrupeds.rl.utils import soft_update_params, to_torch, schedule
 from jumping_quadrupeds.rl.spr.networks import Actor, Critic, Encoder, TransitionModel, Conv2dModel
-from jumping_quadrupeds.rl.spr.augs import RandomShiftsAug, Intensity
+from jumping_quadrupeds.augs import RandomShiftsAug, Intensity
 
 class SPRAgent:
     def __init__(

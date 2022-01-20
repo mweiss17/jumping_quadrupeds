@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 from jumping_quadrupeds.rl.utils import soft_update_params, to_torch, schedule
 from jumping_quadrupeds.rl.drqv2.networks import Actor, Critic, Encoder
-from jumping_quadrupeds.rl.drqv2.augs import RandomShiftsAug
+from jumping_quadrupeds.augs import RandomShiftsAug
 from jumping_quadrupeds.utils import preprocess_obs
 
 class DrQV2Agent:
