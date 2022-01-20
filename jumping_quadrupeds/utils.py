@@ -1,14 +1,17 @@
 import os
 import re
+import random
 import torch
 import argparse
 import numpy as np
-import scipy.signal
 import torch.nn as nn
 from torchvision.transforms import transforms
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
 from collections import defaultdict, namedtuple
+from jumping_quadrupeds.ppo.buffer import OnPolicyReplayBuffer
+from jumping_quadrupeds.drqv2.buffer import OffPolicyReplayBuffer
+from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
 
 DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
 ### FILE ADAPTED FROM OPENAI SPINNINGUP, https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo
@@ -66,22 +69,6 @@ def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
 
 
-def discount_cumsum(x, discount):
-    """
-    magic from rllab for computing discounted cumulative sums of vectors.
-    input:
-        vector x,
-        [x0,
-         x1,
-         x2]
-    output:
-        [x0 + discount * x1 + discount^2 * x2,
-         x1 + discount * x2,
-         x2]
-    """
-    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
-
-
 def to_torch(xs, device):
     return tuple(torch.as_tensor(x, device=device) for x in xs)
 
@@ -130,10 +117,11 @@ class TruncatedNormal(pyd.Normal):
         x = self.loc + eps
         return self._clamp(x)
 
-def preprocess_obs(obs):
+def preprocess_obs(obs, device):
     assert obs.dtype == np.uint8 or obs.dtype == torch.uint8
     if obs.dtype == np.uint8:
         obs = torch.tensor(obs.copy(), dtype=torch.float32)
+    obs = obs.to(device)
     obs = obs / 255.0
     return obs
 
@@ -141,3 +129,28 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
     return seed
+
+def build_loader(replay_dir, name=None, batch_size=None, **kwargs):
+    if name == "on-policy":
+        iterable = OnPolicyReplayBuffer(replay_dir, **kwargs)
+    elif name == "off-policy":
+        iterable = OffPolicyReplayBuffer(replay_dir, **kwargs)
+    elif name == "off-policy-sequential":
+        iterable = OffPolicySequentialReplayBuffer(replay_dir, **kwargs)
+    else:
+        raise ValueError(
+            f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?")
+
+    def _worker_init_fn(worker_id):
+        seed = np.random.get_state()[1][0] + worker_id
+        np.random.seed(seed)
+        random.seed(seed)
+
+    loader = torch.utils.data.DataLoader(
+        iterable,
+        batch_size=batch_size,
+        num_workers=kwargs.get("num_workers"),
+        pin_memory=True,
+        worker_init_fn=_worker_init_fn,
+    )
+    return iter(loader)

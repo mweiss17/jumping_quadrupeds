@@ -17,7 +17,7 @@ sys.path.append(os.getcwd())
 
 from jumping_quadrupeds.eth.vae import ConvVAE
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder, FlosConvEncoder
-from jumping_quadrupeds.dataset import Hdf5ImgDataset
+from jumping_quadrupeds.eth.dataset import Hdf5ImgDataset
 from jumping_quadrupeds.utils import common_img_transforms, abs_path
 
 # pip install -e speedrun from https://github.com/inferno-pytorch/speedrun

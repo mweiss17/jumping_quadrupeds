@@ -1,4 +1,10 @@
+import numpy as np
 from jumping_quadrupeds.buffer import ReplayBuffer
+
+def episode_len(episode):
+    # subtract -1 because the dummy first transition
+    return next(iter(episode.values())).shape[0] - 1
+
 
 class OffPolicyReplayBuffer(ReplayBuffer):
     def __init__(self, replay_dir=None, **kwargs):

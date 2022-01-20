@@ -8,7 +8,7 @@ from tqdm import trange, tqdm
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-from jumping_quadrupeds.dataset import Hdf5ImgSeqDataset
+from jumping_quadrupeds.eth.dataset import Hdf5ImgSeqDataset
 from jumping_quadrupeds.eth.lstm import EthLstm
 from jumping_quadrupeds.eth.vae import ConvVAE
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder, FlosConvEncoder

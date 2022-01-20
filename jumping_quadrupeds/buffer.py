@@ -7,8 +7,6 @@ import numpy as np
 from torch.utils.data import IterableDataset
 from collections import defaultdict
 
-from jumping_quadrupeds.rl.utils import discount_cumsum
-
 
 def episode_len(episode):
     # subtract -1 because the dummy first transition
@@ -156,26 +154,3 @@ class ReplayBuffer(IterableDataset):
             yield self._sample()
 
 
-def make_replay_loader(replay_dir, name=None, batch_size=None, num_workers=None, kwargs=None):
-    if name == "on-policy":
-        iterable = OnPolicyReplayBuffer(replay_dir, **kwargs)
-    elif name == "off-policy":
-        iterable = OffPolicyReplayBuffer(replay_dir, **kwargs)
-    elif name == "off-policy-sequential":
-        iterable = OffPolicySequentialReplayBuffer(replay_dir, **kwargs)
-    else:
-        raise ValueError(f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?")
-
-    def _worker_init_fn(worker_id):
-        seed = np.random.get_state()[1][0] + worker_id
-        np.random.seed(seed)
-        random.seed(seed)
-
-    loader = torch.utils.data.DataLoader(
-        iterable,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=True,
-        worker_init_fn=_worker_init_fn,
-    )
-    return loader

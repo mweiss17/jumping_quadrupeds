@@ -5,9 +5,9 @@ import torch
 from torch.optim import Adam
 from tqdm import tqdm
 from jumping_quadrupeds.ppo.networks import ConvActorCritic
+from jumping_quadrupeds.utils import preprocess_obs
 
-
-class PPO:
+class PPOAgent:
     """
     Proximal Policy Optimization (by clipping),
     with early stopping based on approximate KL
@@ -82,7 +82,7 @@ class PPO:
     def compute_loss_pi(self, data):
         """Computes policy loss"""
         obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
-        obs = preprocess_obs(obs)
+        obs = preprocess_obs(obs, self.device)
 
         # Policy loss
 
@@ -114,7 +114,7 @@ class PPO:
     def compute_loss_v(self, data):
         """Computes value loss"""
         obs, ret = data["obs"], data["ret"]
-        obs = preprocess_obs(obs)
+        obs = preprocess_obs(obs, self.device)
         value_estimate = self.ac.v(obs)
         return value_estimate, ((value_estimate - ret) ** 2).mean()
 
@@ -201,4 +201,4 @@ class PPO:
 
 
     def act(self, obs, step, eval_mode):
-        return self.ac.act(obs, eval_mode)
+        return self.ac.step(obs, eval_mode)

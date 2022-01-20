@@ -15,8 +15,8 @@ agent:
 
 ### Off-Policy Buffer Configuration ###
 buffer:
-  name: "off-policy"
   kwargs:
+    name: "off-policy"
     max_size:  1000000
     nstep: 3
     batch_size: 256
@@ -24,4 +24,3 @@ buffer:
     num_workers: 4
     save_snapshot: True
     discount: 0.99
-    gae_lambda: 0.97

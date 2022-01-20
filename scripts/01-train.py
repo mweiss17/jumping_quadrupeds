@@ -6,18 +6,20 @@ from tqdm import trange
 from collections import defaultdict
 from pathlib import Path
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
-from jumping_quadrupeds.buffer import make_replay_loader, ReplayBufferStorage, OffPolicySequentialReplayBuffer
+from jumping_quadrupeds.buffer import ReplayBufferStorage
 from jumping_quadrupeds.env import make_env
-from jumping_quadrupeds.utils import DataSpec, preprocess_obs
+from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, build_loader
+from jumping_quadrupeds.ppo.agent import PPOAgent
+from jumping_quadrupeds.drqv2.agent import DrQV2Agent
+from jumping_quadrupeds.spr.agent import SPRAgent
 
 
-
-class Train(JumpingBaseExperiment):
+class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointable):
     WANDB_ENTITY = "jumping_quadrupeds"
     WANDB_PROJECT = "rl-encoder-test"
 
     def __init__(self):
-        super(TrainPPOConv, self).__init__()
+        super(Trainer, self).__init__()
         self.auto_setup()
 
         if self.get("use_wandb"):
@@ -25,8 +27,8 @@ class Train(JumpingBaseExperiment):
 
         # env setup
         seed = set_seed(seed=self.get("seed"))
-        self.env = make_env(seed, **self.get("env/kwargs"))
-        self.device = "cpu"  # torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.env = make_env(seed=seed, **self.get("env/kwargs"))
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.episode_returns = defaultdict(list)
         self.ep_idx = 0
 
@@ -45,19 +47,20 @@ class Train(JumpingBaseExperiment):
 
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
         self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
-        self.replay_loader = make_replay_loader(replay_dir, self.get("buffer/kwargs"))
-        self._replay_iter = iter(self.replay_loader)
+        self.replay_loader = build_loader(replay_dir, **self.get("buffer/kwargs"))
 
     def _build_agent(self):
         if self.get("agent/name") == "ppo":
-            from jumping_quadrupeds.ppo import PPO
-            self.agent = PPO(self.env.observation_space, self.env.action_space, self.get("use_wandb"), device=self.device, **self.get("agent/kwargs"))
+            self.agent = PPOAgent(self.env.observation_space,
+                                  self.env.action_space,
+                                  self.get("use_wandb"),
+                                  device=self.device,
+                                  **self.get("agent/kwargs"))
             if self.get("use_wandb"):
                 self.wandb_watch(self.agent.ac.pi, log_freq=1)
                 self.wandb_watch(self.agent.ac.v, log_freq=1)
 
         elif self.get("agent/name") == "drqv2":
-            from jumping_quadrupeds.drqv2 import DrQV2Agent
             self.agent = DrQV2Agent(
                 self.env.observation_space,
                 self.env.action_space,
@@ -65,7 +68,6 @@ class Train(JumpingBaseExperiment):
                 **self.get("agent/kwargs"),
             )
         elif self.get("agent/name") == "spr":
-            from jumping_quadrupeds.spr.agent import SPRAgent
             self.agent = SPRAgent(
                 self.env.observation_space,
                 self.env.action_space,
@@ -113,7 +115,7 @@ class Train(JumpingBaseExperiment):
         obs = self.env.reset()
 
         for _ in trange(self.get("total_steps")):
-            action, val, logp = self.agent.act(preprocess_obs(obs), self.step, eval_mode=False)
+            action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
             next_obs, reward, done, misc = self.env.step(action)
 
             self.episode_returns[self.ep_idx].append(reward)
@@ -126,13 +128,13 @@ class Train(JumpingBaseExperiment):
             if self.checkpoint_now:
                 self.agent.save_checkpoint(self.experiment_directory, self.step)
 
-            metrics = self.agent.update(self.replay_iter, self.step)
-            self.wandb_log(**metrics)
+            if self.update_now:
+                metrics = self.agent.update(self.replay_loader, self.step)
+                self.wandb_log(**metrics)
 
             if done or self.episode_timeout:
                 self.replay_storage.finish_episode()
-                if self.log_now:
-                    self.write_logs()
+                self.write_logs()
                 self.ep_idx += 1
                 obs = self.env.reset()
 
@@ -145,6 +147,8 @@ if __name__ == "__main__":
             "experiments/base",
             "--inherit",
             "templates/base",
+            "--macro",
+            "templates/agents/ppo.yml"
         ]
 
-    TrainPPOConv().run()
+    Trainer().run()
