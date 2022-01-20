@@ -5,8 +5,8 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
-from jumping_quadrupeds.rl.utils import soft_update_params, to_torch, schedule
-from jumping_quadrupeds.rl.drqv2.networks import Actor, Critic, Encoder
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule
+from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
 from jumping_quadrupeds.augs import RandomShiftsAug
 from jumping_quadrupeds.utils import preprocess_obs
 
@@ -24,7 +24,7 @@ class DrQV2Agent:
         update_every_steps,
         stddev_schedule,
         stddev_clip,
-            **kwargs
+        **kwargs
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -95,8 +95,6 @@ class DrQV2Agent:
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
         metrics["critic_target_q"] = target_Q.mean().item()
-        metrics["critic_reward_producing_critic_target_q"] = reward.mean().item()
-        metrics["target_V"] = target_V.mean().item()
         metrics["critic_q1"] = Q1.mean().item()
         metrics["critic_q2"] = Q2.mean().item()
         metrics["critic_loss"] = critic_loss.item()
@@ -148,11 +146,10 @@ class DrQV2Agent:
     def update(self, replay_iter, step):
         metrics = dict()
 
-        obs, action, reward, discount, next_obs = next(replay_iter).values()
+        obs, action, reward, discount, next_obs = to_torch(next(replay_iter).values(), self.device)
 
-        obs = preprocess_obs(obs)
-        next_obs = preprocess_obs(next_obs)
-        action, reward, discount = torch.tensor(action), torch.tensor(reward), torch.tensor(discount)
+        obs = preprocess_obs(obs, self.device)
+        next_obs = preprocess_obs(next_obs, self.device)
 
         # augment
         obs = self.aug(obs)

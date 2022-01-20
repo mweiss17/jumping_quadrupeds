@@ -1,3 +1,4 @@
+### DRQ-v2 Agent Base Configuration ###
 agent:
   name: drqv2
   kwargs:
@@ -10,12 +11,12 @@ agent:
     stddev_clip: 0.3
     num_seed_frames: 5000
     update_every_steps: 10
-max_ep_len: 1000
 
 
+### Off-Policy Buffer Configuration ###
 buffer:
-  on_policy: False
   kwargs:
+    name: "off-policy"
     max_size:  1000000
     nstep: 3
     batch_size: 256
@@ -23,4 +24,3 @@ buffer:
     num_workers: 4
     save_snapshot: True
     discount: 0.99
-    gae_lambda: 0.97

@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from jumping_quadrupeds.utils import TruncatedNormal
-from jumping_quadrupeds.rl import utils
+from jumping_quadrupeds.utils import TruncatedNormal, weight_init
 
 class Encoder(nn.Module):
     def __init__(self, obs_space):
@@ -21,7 +20,7 @@ class Encoder(nn.Module):
             nn.ReLU(),
         )
 
-        self.apply(utils.weight_init)
+        self.apply(weight_init)
 
     def forward(self, obs):
         h = self.convnet(obs)
@@ -47,7 +46,7 @@ class Actor(nn.Module):
             nn.Linear(hidden_dim, action_space.shape[0]),
         )
 
-        self.apply(utils.weight_init)
+        self.apply(weight_init)
 
     def forward(self, obs, std):
         h = self.trunk(obs)
@@ -84,7 +83,7 @@ class Critic(nn.Module):
             nn.Linear(hidden_dim, 1),
         )
 
-        self.apply(utils.weight_init)
+        self.apply(weight_init)
 
     def forward(self, obs, action):
         h = self.trunk(obs)

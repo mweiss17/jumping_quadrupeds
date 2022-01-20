@@ -1,3 +1,4 @@
+### SPR Agent Base Configuration ###
 agent:
   name: spr
   kwargs:
@@ -15,10 +16,10 @@ agent:
     augmentations: ["shift", "intensity"] #choices=["none", "rrc", "affine", "crop", "blur", "shift", "intensity"]
 
 
-
+### Sequential Off-Policy Buffer Configuration ###
 buffer:
-  on_policy: False
   kwargs:
+    name: "off-policy-sequential"
     max_size:  1000000
     batch_size: 256
     fetch_every: 4000

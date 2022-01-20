@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from jumping_quadrupeds.models.encoders import WorldModelsConvEncoder
+from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.utils import TruncatedNormal
 
 
@@ -90,7 +90,7 @@ class CNNCritic(nn.Module):
 class ConvActorCritic(AbstractActorCritic):
     def __init__(
         self,
-        stddev_clip,
+        observation_space,
         action_space,
         shared_encoder=False,
         hidden_sizes=16,
@@ -107,7 +107,7 @@ class ConvActorCritic(AbstractActorCritic):
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space,
-            hidden_sizes,  # 4 * 4 square scaling factor for car-racing
+            hidden_sizes,  # 4 * 4 square scaling factor for base-racing
             log_std,
         )
 

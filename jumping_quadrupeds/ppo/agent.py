@@ -4,10 +4,10 @@ import numpy as np
 import torch
 from torch.optim import Adam
 from tqdm import tqdm
-from jumping_quadrupeds.rl.networks import ConvActorCritic
+from jumping_quadrupeds.ppo.networks import ConvActorCritic
+from jumping_quadrupeds.utils import preprocess_obs
 
-
-class PPO:
+class PPOAgent:
     """
     Proximal Policy Optimization (by clipping),
     with early stopping based on approximate KL
@@ -22,9 +22,9 @@ class PPO:
         pi_lr=None,
         vf_lr=None,
         rew_smooth_len=None,
-        target_kl=0.02,
-        train_pi_iters=4,
-        train_v_iters=4,
+        target_kl=None,
+        train_pi_iters=None,
+        train_v_iters=None,
         ac_checkpoint=None,
         vf_optim_checkpoint=None,
         pi_optim_checkpoint=None,
@@ -33,7 +33,6 @@ class PPO:
         log_std=None,
         freeze_encoder=None,
         clip_ratio=None,
-        num_expl_steps=0,
         **kwargs,
     ) -> None:
 
@@ -50,7 +49,6 @@ class PPO:
         self.ep_len_mean = deque(maxlen=rew_smooth_len)
         self.total_steps = 0
         self.total_episodes = 0
-        self.num_expl_steps = num_expl_steps
 
         # policy and value networks
         self.ac = ConvActorCritic(
@@ -84,7 +82,7 @@ class PPO:
     def compute_loss_pi(self, data):
         """Computes policy loss"""
         obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
-        obs = preprocess_obs(obs)
+        obs = preprocess_obs(obs, self.device)
 
         # Policy loss
 
@@ -116,7 +114,7 @@ class PPO:
     def compute_loss_v(self, data):
         """Computes value loss"""
         obs, ret = data["obs"], data["ret"]
-        obs = preprocess_obs(obs)
+        obs = preprocess_obs(obs, self.device)
         value_estimate = self.ac.v(obs)
         return value_estimate, ((value_estimate - ret) ** 2).mean()
 
@@ -203,7 +201,4 @@ class PPO:
 
 
     def act(self, obs, step, eval_mode):
-        if step < self.num_expl_steps:
-            return torch.zeros(self.action_space.shape[0]).uniform_(-1., 1.)
-        else:
-            return self.ac.act(obs, eval_mode)
+        return self.ac.step(obs, eval_mode)
