@@ -85,7 +85,6 @@ class TrainPPOConv(
                 **self.get("agent/kwargs"),
             )
 
-
     @property
     def replay_iter(self):
         if self._replay_iter is None:
@@ -146,12 +145,6 @@ class TrainPPOConv(
             self.next_step()
             self.replay_storage.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
 
-            # self.wandb_log(**{
-            #     "act-turn": action[0],
-            #     "act-gas": action[1],
-            #     "act-brake": action[2],
-            # })
-            #
             # Update obs (critical!)
             obs = next_obs
 
@@ -179,9 +172,9 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         sys.argv = [
             sys.argv[0],
-            "experiments/ppo-car",
+            "experiments/base",
             "--inherit",
-            "templates/ppo-car",
+            "templates/base",
         ]
 
     TrainPPOConv().run()
