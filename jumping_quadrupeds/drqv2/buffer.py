@@ -1,3 +1,4 @@
+import traceback
 import numpy as np
 from jumping_quadrupeds.buffer import ReplayBuffer
 
@@ -14,7 +15,7 @@ class OffPolicyReplayBuffer(ReplayBuffer):
     def _sample(self):
         try:
             self._try_fetch()
-        except:
+        except Exception as e:
             traceback.print_exc()
 
         self._samples_since_last_fetch += 1

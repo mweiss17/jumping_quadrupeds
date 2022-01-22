@@ -48,6 +48,13 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
         self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
         self.replay_loader = build_loader(replay_dir, **self.get("buffer/kwargs"))
+        self._replay_iter = None
+
+    @property
+    def replay_iter(self):
+        if self._replay_iter is None:
+            self._replay_iter = iter(self.replay_loader)
+        return self._replay_iter
 
     def _build_agent(self):
         if self.get("agent/name") == "ppo":
@@ -91,7 +98,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     @property
     def update_now(self):
         update_every = self.step % self.get("agent/kwargs/update_every_steps") == 0 and self.step > 0
-        gt_seed_frames = self.step >= self.get("agent/kwargs/num_seed_frames")
+        gt_seed_frames = self.step > self.get("agent/kwargs/num_seed_frames")
         ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) > self.get("buffer/kwargs/nstep", 1)
         return update_every and gt_seed_frames and ep_len_gt_nstep
 
@@ -99,21 +106,21 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         ep_rets = list(dict(self.episode_returns).values())
         ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
         full_episodic_return = ep_rets.sum(axis=1)
-        self.wandb_log(
-            **{
-                "Episode mean reward": np.mean(full_episodic_return),
-                "Episode return": full_episodic_return[-1],
-                "Episode mean length": np.mean([len(ep) for ep in self.episode_returns.values()]),
-                "Number of Episodes": len(self.episode_returns),
-            }
-        )
-        self.env.send_wandb_video()
+        if self.get("use_wandb"):
+            self.wandb_log(
+                **{
+                    "Episode mean reward": np.mean(full_episodic_return),
+                    "Episode return": full_episodic_return[-1],
+                    "Episode mean length": np.mean([len(ep) for ep in self.episode_returns.values()]),
+                    "Number of Episodes": len(self.episode_returns),
+                }
+            )
+            self.env.send_wandb_video()
 
 
     @register_default_dispatch
     def __call__(self):
         obs = self.env.reset()
-
         for _ in trange(self.get("total_steps")):
             action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
             next_obs, reward, done, misc = self.env.step(action)
@@ -128,15 +135,17 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             if self.checkpoint_now:
                 self.agent.save_checkpoint(self.experiment_directory, self.step)
 
-            if self.update_now:
-                metrics = self.agent.update(self.replay_loader, self.step)
-                self.wandb_log(**metrics)
-
             if done or self.episode_timeout:
                 self.replay_storage.finish_episode()
                 self.write_logs()
                 self.ep_idx += 1
                 obs = self.env.reset()
+
+            if self.update_now:
+                metrics = self.agent.update(self.replay_iter, self.step)
+                if self.get("use_wandb"):
+                    self.wandb_log(**metrics)
+
 
 
 if __name__ == "__main__":
