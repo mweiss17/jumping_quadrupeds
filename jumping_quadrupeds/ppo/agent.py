@@ -173,6 +173,8 @@ class PPOAgent:
                     "ratio-mean": ratio_mean,
                     "ratio-std": ratio_std,
                 }
+            if len(action_mean)>3:
+                metrics["act-mean-view"] = action_mean[3]
         return metrics
 
 
