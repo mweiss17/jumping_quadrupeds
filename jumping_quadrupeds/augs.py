@@ -28,3 +28,14 @@ class RandomShiftsAug(nn.Module):
 
         grid = base_grid + shift
         return F.grid_sample(x, grid, padding_mode="zeros", align_corners=False)
+
+class Intensity(nn.Module):
+    def __init__(self, scale):
+        super().__init__()
+        self.scale = scale
+
+    def forward(self, x):
+        r = torch.randn((x.size(0), 1, 1, 1), device=x.device)
+        noise = 1.0 + (self.scale * r.clamp(-2.0, 2.0))
+        return x * noise
+

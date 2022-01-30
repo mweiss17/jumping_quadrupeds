@@ -1,34 +1,37 @@
+### PPO Agent Base Configuration ###
 agent:
   name: "ppo"
   kwargs:
-    # clip_ratio (float): Hyperparameter for clipping in the policy objective.
-    #  Roughly: how far can the new policy go from the old policy while
-    #  still profiting (improving the objective function)?
-    clip_ratio: 0.2
-
-    # pi_lr (float): Learning rate for policy optimizer.
-    pi_lr: 1.0e-4
-
-    # vf_lr (float): Learning rate for value function optimizer.
-    vf_lr: 1.0e-5
-
-    # train_pi_iters (int): Maximum number of gradient descent steps to take on policy loss per epoch.
-    train_pi_iters: 4
-
-    # train_v_iters (int): Number of gradient descent steps to take on value function per epoch.
-    train_v_iters: 4
-
-    # target_kl (float): Roughly what KL divergence we think is appropriate between new and old policies after an update.
-    target_kl: 0.02
-    # ac_checkpoint: experiments/ac/Weights/ac-40.pt
-    # pi_optim_checkpoint: experiments/ppo/Weights/pi-optim-40.pt
-    # vf_optim_checkpoint: experiments/ppo/Weights/vf-optim-40.pt
-    shared_encoder: False
+    clip_ratio: 0.2 #(float): clips the amount that the old policy can change
+    pi_lr: 1.0e-4 # (float): Learning rate for policy optimizer.
+    vf_lr: 1.0e-5 #  (float): Learning rate for value function optimizer.
+    train_pi_iters: 4 #(int): Maximum number of gradient descent steps to take on policy loss per epoch.
+    train_v_iters: 4 # (int): Number of gradient descent steps to take on value function per epoch.
+    target_kl: 0.02 # (float): Roughly what KL divergence we think is appropriate between new and old policies after an update.
+    rew_smooth_len: 10 # (int): rewards are accumulated in a ring buffer and this determines the size
     conv_ac_hidden_scaling: 36 # 36 if 3x84x84 elif obs_shape is 3x64x64 then 16
+    shared_encoder: False
     log_std: 0.5
     freeze_encoder: False
     update_every_steps: 4000
     num_seed_frames: 0
-    num_expl_steps: 0
 
 
+### On-Policy Buffer Configuration ###
+buffer:
+  kwargs:
+    name: "on-policy"
+    max_size:  4000
+    batch_size: 4000
+    fetch_every: 4000
+    num_workers: 0
+    save_snapshot: True
+    discount: 0.99
+    gae_lambda: 0.97
+
+
+### Checkpoints ###
+# in case you want to start from  a checkpoint, set these variables (or pass them through command line)
+# ppo_checkpoint: experiments/ppo/Weights/ac-40.pt
+# pi_optim_checkpoint: experiments/ppo/Weights/pi-optim-40.pt
+# vf_optim_checkpoint: experiments/ppo/Weights/vf-optim-40.pt

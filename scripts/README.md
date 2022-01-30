@@ -11,7 +11,7 @@ Scripts in `rl-tests/` are focused on the RL-portion of that work, and include s
 ### `rl-tests/`
 - **01-simple-ppo-test.py**: Trains an MLP actor-critic model on cartpole
 - **02-simple-ppo-test.py**: Trains an MLP actor-critic model on cartpole with a shared encoder
-- **03-ppo-car.py**: Trains a convolutional actor-critic model on CarRacing. We can parameterize this experiment with different templates.
+- **03-base.py**: Trains a convolutional actor-critic model on CarRacing. We can parameterize this experiment with different templates.
 
 ## Running all them scripts
 

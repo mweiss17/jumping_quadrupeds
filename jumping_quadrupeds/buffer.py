@@ -7,8 +7,6 @@ import numpy as np
 from torch.utils.data import IterableDataset
 from collections import defaultdict
 
-from jumping_quadrupeds.rl.utils import discount_cumsum
-
 
 def episode_len(episode):
     # subtract -1 because the dummy first transition
@@ -134,9 +132,11 @@ class ReplayBuffer(IterableDataset):
             worker_id = torch.utils.data.get_worker_info().id
         except:
             worker_id = 0
+
         eps_fns = sorted(self._replay_dir.glob("*.npz"), reverse=True)
         fetched_size = 0
         for eps_fn in eps_fns:
+
             eps_idx, eps_len = [int(x) for x in eps_fn.stem.split("_")[1:]]
             if eps_idx % self._num_workers != worker_id:
                 continue
@@ -156,121 +156,3 @@ class ReplayBuffer(IterableDataset):
             yield self._sample()
 
 
-class OffPolicyReplayBuffer(ReplayBuffer):
-    def __init__(self, replay_dir=None, **kwargs):
-        super().__init__(replay_dir=replay_dir, **kwargs)
-        self._nstep = kwargs.get("nstep")
-
-    def _sample(self):
-        try:
-            self._try_fetch()
-        except:
-            traceback.print_exc()
-
-        self._samples_since_last_fetch += 1
-        episode = self._sample_episode()
-        # add +1 for the first dummy transition
-        idx = np.random.randint(0, episode_len(episode) - self._nstep + 1) + 1
-
-        obs = episode["obs"][idx - 1]
-        action = episode["act"][idx]
-        next_obs = episode["obs"][idx + self._nstep - 1]
-        reward = np.zeros_like(episode["rew"][idx])
-        discount = np.ones_like(episode["discount"][idx])
-        for i in range(self._nstep):
-            step_reward = episode["rew"][idx + i]
-            reward += discount * step_reward
-            discount *= episode["discount"][idx + i] * self._discount
-
-        sample = {
-            "obs": torch.as_tensor(obs, dtype=torch.float32) / 255,
-            "act": action,
-            "rew": reward,
-            "discount": discount,
-            "next_obs": torch.as_tensor(next_obs, dtype=torch.float32) / 255,
-        }
-
-        return sample
-
-
-class OnPolicyReplayBuffer(ReplayBuffer):
-    def __init__(self, replay_dir=None, **kwargs):
-        super().__init__(replay_dir=replay_dir, **kwargs)
-        self._gae_lambda = kwargs.get("gae_lambda", 0.97)
-        self.eps_idx = 0
-        self.step_idx = 0
-        self.total_idx = 0
-
-    def _sample(self):
-        try:
-            self._try_fetch()
-        except:
-            traceback.print_exc()
-        if self.total_idx >= self._max_size:
-            self.eps_idx = 0
-            self.total_idx = 0
-        self._samples_since_last_fetch += 1
-        try:
-            episode = self._episodes[self._episode_fns[self.eps_idx]]
-        except Exception:
-            breakpoint()
-        if self.step_idx == 0:
-            episode = self.compute_rets_and_advs(episode)
-
-        sample = {
-            "obs": torch.as_tensor(episode["obs"][self.step_idx], dtype=torch.float32) / 255,
-            "act": episode["act"][self.step_idx],
-            "rew": episode["rew"][self.step_idx],
-            "adv": episode["adv"][self.step_idx],
-            "ret": episode["ret"][self.step_idx],
-            "logp": episode["logp"][self.step_idx],
-        }
-
-        self.step_idx += 1
-        self.total_idx += 1
-        if self.step_idx == episode_len(episode) + 1:
-            self.eps_idx += 1
-            self.step_idx = 0
-        return sample
-
-    def compute_rets_and_advs(self, episode):
-        # add zeros to the end
-        rew = np.pad(episode["rew"], ((0, 1), (0, 0)), "constant")
-        val = np.pad(episode["val"], ((0, 1), (0, 0)), "constant")
-
-        # the next two lines implement GAE-Lambda advantage calculation
-        deltas = rew[:-1] + self._discount * val[1:] - val[:-1]
-        adv_buf = discount_cumsum(deltas, self._discount * self._gae_lambda)
-
-        # # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = np.mean(adv_buf), np.std(adv_buf)
-        adv_buf = (adv_buf - adv_mean) / adv_std
-        episode["adv"] = adv_buf
-
-        # the next line computes rewards-to-go, to be targets for the value function
-        ret_buf = discount_cumsum(rew, self._discount)[:-1]
-
-        episode["ret"] = ret_buf
-        return episode
-
-
-def _worker_init_fn(worker_id):
-    seed = np.random.get_state()[1][0] + worker_id
-    np.random.seed(seed)
-    random.seed(seed)
-
-
-def make_replay_loader(replay_dir, on_policy, kwargs=None):
-    if on_policy:
-        iterable = OnPolicyReplayBuffer(replay_dir, **kwargs)
-    else:
-        iterable = OffPolicyReplayBuffer(replay_dir, **kwargs)
-
-    loader = torch.utils.data.DataLoader(
-        iterable,
-        batch_size=kwargs.get("batch_size"),
-        num_workers=kwargs.get("num_workers"),
-        pin_memory=True,
-        worker_init_fn=_worker_init_fn,
-    )
-    return loader
