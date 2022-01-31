@@ -3,14 +3,17 @@ agent:
   name: drqv2
   kwargs:
     lr: 1e-4
-    critic_target_tau: 0.01
-    num_expl_steps: 1000
+    critic_lr: 1e-4 # null
+    critic_target_tau: 0.01 # 0.01 default
+    num_expl_steps: 8000
     hidden_dim: 1024
     feature_dim: 50
-    stddev_schedule: 'linear(0.5, 0.1, 100000)'
     stddev_clip: 0.3
-    num_seed_frames: 1000
+    num_seed_frames: 8000
     update_every_steps: 10
+    log_std_init: null # exp(-.5) = .6 set to null to disable
+    stddev_schedule: 'linear(1.0, 0.1, 8000)'
+
 
 
 ### Off-Policy Buffer Configuration ###
@@ -21,6 +24,6 @@ buffer:
     nstep: 3
     batch_size: 256
     fetch_every: 1000
-    num_workers: 1
+    num_workers: 8
     save_snapshot: True
     discount: 0.99

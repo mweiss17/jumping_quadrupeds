@@ -31,11 +31,15 @@ class Encoder(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim):
+    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std):
         super().__init__()
         self.action_space = action_space
         self.low = action_space.low[0]
         self.high = action_space.high[0]
+        self.log_std = None
+        if log_std:
+            self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
+
         self.trunk = nn.Sequential(
             nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh()
         )
@@ -50,11 +54,15 @@ class Actor(nn.Module):
 
         self.apply(weight_init)
 
-    def forward(self, obs, std):
+    def forward(self, obs, std=None):
         h = self.trunk(obs)
 
         mu = self.policy(h)
         mu = torch.tanh(mu)
+        if not std:
+            std = torch.exp(self.log_std)
+
+        # do it this way to backprop thru
         std = torch.ones_like(mu) * std
 
         dist = TruncatedNormal(mu, std, low=self.low, high=self.high)

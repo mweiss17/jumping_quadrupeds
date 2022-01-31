@@ -85,7 +85,6 @@ class PPOAgent:
         obs = preprocess_obs(obs, self.device)
 
         # Policy loss
-
         pi, logp = self.ac.pi(obs, act)
         ratio = torch.exp(logp - logp_old)
         clip_adv = (

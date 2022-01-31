@@ -4,26 +4,29 @@ agent:
   kwargs:
     lr: 1e-4
     critic_target_tau: 0.01
-    num_expl_steps: 2000
+    num_expl_steps: 1000
     hidden_dim: 1024
     feature_dim: 50
     stddev_schedule: 'linear(1.0,0.1,100000)'
+    log_std_init: null
     stddev_clip: 0.3
-    num_seed_frames: 2000
+    num_seed_frames: 1000
     update_every_steps: 10
     residual_tm: True
     renormalize: True
     augmentations: ["shift", "intensity"] #choices=["none", "rrc", "affine", "crop", "blur", "shift", "intensity"]
-
+    classifier_type: "mlp" # choices=["mlp", "bilinear", "q_l1", "q_l2", "none"],'Style of NCE classifier'
+    final_classifier: "linear" # choices=["mlp", "linear", "none"],
+    use_spr: True
 
 ### Sequential Off-Policy Buffer Configuration ###
 buffer:
   kwargs:
     name: "off-policy-sequential"
     max_size:  1000000
-    batch_size: 256
-    fetch_every: 4000
-    num_workers: 4
+    batch_size: 128
+    fetch_every: 1000
+    num_workers: 1
     save_snapshot: True
     discount: 0.99
     gae_lambda: 0.97

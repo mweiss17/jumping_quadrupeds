@@ -24,7 +24,7 @@ def schedule(schdl, step):
         if match:
             init, final, duration = [float(g) for g in match.groups()]
             mix = np.clip(step / duration, 0.0, 1.0)
-            return (1.0 - mix) * init + mix * final
+            return (1.0 - mix) * init + mix * final, duration
         match = re.match(r"step_linear\((.+),(.+),(.+),(.+),(.+)\)", schdl)
         if match:
             init, final1, duration1, final2, duration2 = [
@@ -32,10 +32,10 @@ def schedule(schdl, step):
             ]
             if step <= duration1:
                 mix = np.clip(step / duration1, 0.0, 1.0)
-                return (1.0 - mix) * init + mix * final1
+                return (1.0 - mix) * init + mix * final1, duration
             else:
                 mix = np.clip((step - duration1) / duration2, 0.0, 1.0)
-                return (1.0 - mix) * final1 + mix * final2
+                return (1.0 - mix) * final1 + mix * final2, duration
     raise NotImplementedError(schdl)
 
 

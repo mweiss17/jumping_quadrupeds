@@ -36,12 +36,12 @@ class VideoWrapper(gym.Wrapper):
 
         return state
 
-    def step(self, action):
+    def step(self, action, render_type="state_pixels"): #rgb_array
         state, reward, done, info = self.env.step(action)
 
         if self.episode_no + 1 == self.render_every_n_episodes:
-            frame = np.copy(self.env.render("rgb_array"))
-            self.episode_images.append(frame)
+            # frame = np.copy(self.env.render(render_type))
+            self.episode_images.append(np.copy(state))
 
         return state, reward, done, info
 
@@ -50,10 +50,11 @@ class VideoWrapper(gym.Wrapper):
             print("Not enough images for GIF. continuing...")
             return
 
-        lf = np.array(self.last_frames)
-        print(lf.shape)
-        frames = np.swapaxes(lf, 1, 3)
-        frames = np.swapaxes(frames, 2, 3)
+        frames = np.array(self.last_frames)
+        print(frames.shape)
+        # frames = np.swapaxes(lf, 1, 3)
+        # frames = np.swapaxes(frames, 2, 3)
+
         wandb.log({"video": wandb.Video(frames, fps=10, format="gif")})
         print("=== Logged GIF")
         self.last_frames = None
