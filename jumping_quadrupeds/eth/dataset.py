@@ -6,19 +6,19 @@ from torch.utils.data import Dataset
 
 
 class Hdf5ImgDataset(Dataset):
-    def __init__(self, path, transform=None, flat=False):
+    def __init__(self, path, transform=None, flat=False, seq_len=1):
         super().__init__()
         self.path = path
         self.flat = flat
+        self.seq_len = seq_len
         self.transform = transform
         with h5py.File(path, "r") as f:
             self.episodes = len(f["states"])
             self.steps = len(f["states"][0])
-        # IMPORTANT: DO NOT KEEP THE HDF5 OPEN HERE
-        # OR ELSE YOU CAN'T USE MULTIPLE DATALOADER WORKERS
 
     def __len__(self):
-        return self.episodes
+        return (self.episodes * self.steps)/self.seq_len
+
 
     def open_ds(self):
         self.file_handle = h5py.File(self.path, "r")
@@ -31,6 +31,7 @@ class Hdf5ImgDataset(Dataset):
         if self.flat:
             episode_idx = index % self.episodes
             step_idx = math.floor(index / self.episodes)
+            # print(f"index: {index}, episode_idx: {episode_idx}, step_idx: {step_idx}")
             img = self.dataset[episode_idx, step_idx]
         else:
             img = self.dataset[index]
