@@ -84,8 +84,8 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     return layer
 
 
-def common_img_transforms(with_flip=False):
-    out = [transforms.Resize(64)]
+def common_img_transforms(with_flip=False, size=84):
+    out = [transforms.Resize(size)]
     if with_flip:
         out.append(transforms.RandomHorizontalFlip())
     out.append(transforms.ToTensor())
