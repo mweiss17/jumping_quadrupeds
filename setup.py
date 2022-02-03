@@ -24,6 +24,7 @@ setup(
         "imageio",
         "rich",
         "submitit",
+        "kornia",
         "gym @ git+https://git@github.com/tesfaldet/gym@master#egg=gym",
         "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
         "wormulon @ git+ssh://git@github.com/mweiss17/wormulon@main#egg=wormulon",

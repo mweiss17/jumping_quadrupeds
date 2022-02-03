@@ -17,7 +17,7 @@ class Hdf5ImgDataset(Dataset):
             self.steps = len(f["states"][0])
 
     def __len__(self):
-        return (self.episodes * self.steps)/self.seq_len
+        return (self.episodes * self.steps) // self.seq_len
 
 
     def open_ds(self):
@@ -32,14 +32,18 @@ class Hdf5ImgDataset(Dataset):
             episode_idx = index % self.episodes
             step_idx = math.floor(index / self.episodes)
             # print(f"index: {index}, episode_idx: {episode_idx}, step_idx: {step_idx}")
-            img = self.dataset[episode_idx, step_idx]
+            imgs = self.dataset[episode_idx, step_idx:step_idx+self.seq_len]
         else:
             img = self.dataset[index]
 
         if self.transform is not None:
-            img = Image.fromarray(img)
-            img = self.transform(img)
-        return img
+            timgs = []
+            for i in range(imgs.shape[0]):
+                img = Image.fromarray(imgs[i])
+                img = self.transform(img)
+                timgs.append(img)
+            imgs = torch.stack(timgs)
+        return imgs
 
 
 class Hdf5ImgSeqDataset(Hdf5ImgDataset):

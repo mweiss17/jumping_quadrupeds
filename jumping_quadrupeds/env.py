@@ -1,6 +1,8 @@
 import numpy as np
 import wandb
 import gym
+import SEVN_gym
+import importlib
 import cv2
 try:
     import dm_control
@@ -140,7 +142,6 @@ def make_env(seed=-1, name=None, action_repeat=None, w=84, h=84, render_every=No
     if "Duckietown" in name:
         import gym_duckietown
 
-    # TODO add framestacking https://github.com/facebookresearch/drqv2/blob/7ad7e05fa44378c64998dc89586a9703b74531ab/dmc.py
     if name.startswith("dm-"):
         domain, task = name[3:].split("_")
         camera_id = dict(quadruped=2).get(domain, 0)

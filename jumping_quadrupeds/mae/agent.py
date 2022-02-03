@@ -5,11 +5,12 @@
 import torch
 import torch.nn.functional as F
 import numpy as np
+import os
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
-from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
+from jumping_quadrupeds.mae.networks import Actor, Critic, Encoder, MAE, ViT
 from jumping_quadrupeds.augs import RandomShiftsAug
 
-class DrQV2Agent:
+class MAEAgent:
     def __init__(
         self,
         obs_space,
@@ -17,6 +18,7 @@ class DrQV2Agent:
         device,
         lr,
         critic_lr,
+        encoder_lr,
         feature_dim,
         hidden_dim,
         critic_target_tau,
@@ -25,6 +27,16 @@ class DrQV2Agent:
         stddev_schedule,
         stddev_clip,
         log_std_init,
+        patch_size=12,
+        vit_dim=256,
+        vit_depth=2,
+        vit_heads=8,
+        vit_mlp_dim=512,
+        vit_dropout=0.1,
+        vit_emb_dropout=0.1,
+        mae_masking_ratio=0.75,
+        mae_decoder_dim=512,
+        mae_decoder_depth=2,
         **kwargs
     ):
         self.device = device
@@ -35,8 +47,27 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
 
+        vit = ViT(
+            image_size=obs_space.shape[-1],
+            patch_size=patch_size,
+            num_classes=1000,
+            dim=vit_dim,
+            depth=vit_depth,
+            heads=vit_heads,
+            mlp_dim=vit_mlp_dim,
+            dropout=vit_dropout,
+            emb_dropout=vit_emb_dropout,
+        ).to(device)
+        mae = MAE(
+            encoder=vit,
+            masking_ratio=mae_masking_ratio,  # the paper recommended 75% masked patches
+            decoder_dim=mae_decoder_dim,  # paper showed good results with just 512
+            decoder_depth=mae_decoder_depth,  # anywhere from 1 to 8
+            device=device,
+        )
+
         # models
-        self.encoder = Encoder(obs_space).to(device)
+        self.encoder = mae.to(device)
         self.actor = Actor(
             self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init
         ).to(device)
@@ -50,7 +81,7 @@ class DrQV2Agent:
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
-        self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=lr)
+        self.encoder_opt = torch.optim.AdamW(self.encoder.parameters(), lr=encoder_lr)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=critic_lr if critic_lr else lr)
 
@@ -76,7 +107,7 @@ class DrQV2Agent:
 
     def act(self, obs, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
-        obs = self.encoder(obs.unsqueeze(0))
+        obs = self.encoder(obs)
         stddev, duration = self.get_stddev(step)
 
         dist = self.actor(obs, stddev)
@@ -154,6 +185,15 @@ class DrQV2Agent:
 
         return metrics
 
+    def mae_update(self, obs):
+        metrics = dict()
+        recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.encoder(obs, eval=False)
+        self.encoder_opt.zero_grad()
+        recon_loss.backward()
+        self.encoder_opt.step()
+        metrics["mae_loss"] = recon_loss.cpu().item()
+        return metrics
+
     def update(self, replay_iter, step):
         metrics = dict()
 
@@ -161,6 +201,10 @@ class DrQV2Agent:
 
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
+
+        # update encoder
+        # if step % 5 == 0:
+        metrics.update(self.mae_update(obs))
 
         # augment
         obs = self.aug(obs)
@@ -172,7 +216,6 @@ class DrQV2Agent:
             next_obs = self.encoder(next_obs)
 
         metrics["batch_reward"] = reward.mean().item()
-
         # update critic
         metrics.update(
             self.update_critic(obs, action, reward, discount, next_obs, step)
@@ -215,3 +258,19 @@ class DrQV2Agent:
             self.critic_opt.state_dict(),
             f"{exp_dir}/Weights/critic_opt-{epoch}.pt",
         )
+
+
+    def latest_chkpt(self, exp_dir):
+        latest_file_index = max([int(f[f.index('-')+1:f.index('.')]) for f in os.listdir(f"{exp_dir}/Weights/")])
+        return latest_file_index
+
+    def load_checkpoint(self, exp_dir, step=None):
+        chkpt_idx = step if step is not None else self.latest_chkpt(exp_dir)
+        print(f"loading checkpoint: {chkpt_idx}")
+        self.actor.load_state_dict(torch.load(f"{exp_dir}/Weights/actor-{chkpt_idx}.pt"))
+        self.critic.load_state_dict(torch.load(f"{exp_dir}/Weights/critic-{chkpt_idx}.pt"))
+        self.critic_target.load_state_dict(torch.load(f"{exp_dir}/Weights/critic_target-{chkpt_idx}.pt"))
+        self.encoder.load_state_dict(torch.load(f"{exp_dir}/Weights/encoder-{chkpt_idx}.pt"))
+        self.encoder_opt.load_state_dict(torch.load(f"{exp_dir}/Weights/encoder_opt-{chkpt_idx}.pt"))
+        self.actor_opt.load_state_dict(torch.load(f"{exp_dir}/Weights/actor_opt-{chkpt_idx}.pt"))
+        self.critic_opt.load_state_dict(torch.load(f"{exp_dir}/Weights/critic_opt-{chkpt_idx}.pt"))
