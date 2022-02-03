@@ -13,7 +13,11 @@ agent:
     num_seed_frames: 1000
     update_every_steps: 10
     log_std_init: null # exp(-.5) = .6 set to null to disable
-    stddev_schedule: 'linear(1.0, 0.1, 100000)'
+    stddev_schedule:
+      name: linear
+      start: 1.0
+      end: 0.1
+      num_steps: 100000
     mask_strat: "all" # middle
     vit_dim: 512
     vit_depth: 2

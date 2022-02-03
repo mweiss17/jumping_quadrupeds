@@ -195,14 +195,6 @@ class SPRAgent:
                                         eval_transform, p=self.aug_prob)
         return image
 
-    def get_stddev(self, step):
-        stddev = None
-        if self.stddev_schedule is not None:
-            stddev, duration = schedule(self.stddev_schedule, step)
-            if step > duration and self.actor.log_std is not None:
-                return None, None
-        return stddev, None
-
     @torch.no_grad()
     def transform(self, images, augment=False):
         images = images.float() / 255. if images.dtype == torch.uint8 else images
@@ -230,7 +222,7 @@ class SPRAgent:
         if len(obs.shape) < 4:
             obs = obs.unsqueeze(0)
         obs = self.encoder(obs)
-        stddev, duration = self.get_stddev(step)
+        stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
         dist = self.actor(obs, stddev)
         if eval_mode:
             action = dist.mean
@@ -247,7 +239,7 @@ class SPRAgent:
         metrics = dict()
 
         with torch.no_grad():
-            stddev, duration = self.get_stddev(step)
+            stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
             dist = self.actor(next_obs, stddev)
             next_action = dist.sample(clip=self.stddev_clip)
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
@@ -277,7 +269,7 @@ class SPRAgent:
     def update_actor(self, obs, step):
         metrics = dict()
 
-        stddev, duration = self.get_stddev(step)
+        stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
         dist = self.actor(obs, stddev)
         action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)

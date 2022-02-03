@@ -16,20 +16,27 @@ from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
 DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
 ### FILE ADAPTED FROM OPENAI SPINNINGUP, https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo
 
-def schedule(schdl, step):
+def schedule(schdl, step, log_std):
     try:
         return float(schdl)
-    except ValueError:
+    except (ValueError, TypeError):
+        schdl = list(schdl.values())
+        schdl = f"{schdl[0]}({float(schdl[1])}, {float(schdl[2])}, {int(schdl[3])})"
+
         match = re.match(r"linear\((.+),(.+),(.+)\)", schdl)
         if match:
             init, final, duration = [float(g) for g in match.groups()]
             mix = np.clip(step / duration, 0.0, 1.0)
+            if step > duration and log_std is not None:
+                return None
+
             return (1.0 - mix) * init + mix * final, duration
         match = re.match(r"step_linear\((.+),(.+),(.+),(.+),(.+)\)", schdl)
         if match:
             init, final1, duration1, final2, duration2 = [
                 float(g) for g in match.groups()
             ]
+
             if step <= duration1:
                 mix = np.clip(step / duration1, 0.0, 1.0)
                 return (1.0 - mix) * init + mix * final1, duration

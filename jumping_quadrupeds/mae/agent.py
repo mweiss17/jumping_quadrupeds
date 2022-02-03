@@ -91,14 +91,6 @@ class MAEAgent:
         self.train()
         self.critic_target.train()
 
-    def get_stddev(self, step):
-        stddev = None
-        if self.stddev_schedule is not None:
-            stddev, duration = schedule(self.stddev_schedule, step)
-            if step > duration and self.actor.log_std is not None:
-                return None
-        return stddev, None
-
     def train(self, training=True):
         self.training = training
         self.encoder.train(training)
@@ -108,7 +100,7 @@ class MAEAgent:
     def act(self, obs, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
         obs = self.encoder(obs)
-        stddev, duration = self.get_stddev(step)
+        stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
 
         dist = self.actor(obs, stddev)
         if eval_mode:
@@ -126,7 +118,7 @@ class MAEAgent:
         metrics = dict()
 
         with torch.no_grad():
-            stddev, duration = self.get_stddev(step)
+            stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
             dist = self.actor(next_obs, stddev)
             next_action = dist.sample(clip=self.stddev_clip)
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
@@ -154,7 +146,7 @@ class MAEAgent:
     def update_actor(self, obs, step):
         metrics = dict()
 
-        stddev, duration = self.get_stddev(step)
+        stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
         dist = self.actor(obs, stddev)
         action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)

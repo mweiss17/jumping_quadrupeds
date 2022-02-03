@@ -7,6 +7,13 @@ env:
     render_every: 25 # (int): Frequency at which to create a video of a rollout.
     action_repeat: 1
 
+stddev_schedule:
+  name: linear
+  kwargs:
+    start: 1.0
+    end: 0.1
+    num_steps: 100000
+
 ### Experimental ###
 use_wandb: True
 seed: 1 # (int): random seed
