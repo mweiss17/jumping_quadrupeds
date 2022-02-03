@@ -12,6 +12,7 @@ from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, build_l
 from jumping_quadrupeds.ppo.agent import PPOAgent
 from jumping_quadrupeds.drqv2.agent import DrQV2Agent
 from jumping_quadrupeds.spr.agent import SPRAgent
+from jumping_quadrupeds.mae.agent import MAEAgent
 
 
 class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointable):
@@ -82,8 +83,17 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.get("buffer/kwargs/jumps"),
                 **self.get("agent/kwargs"),
             )
+        elif self.get("agent/name") == "mae":
+            self.agent = MAEAgent(
+                self.env.observation_space,
+                self.env.action_space,
+                self.device,
+                **self.get("agent/kwargs"),
+            )
         else:
             raise ValueError(f"Unknown agent {self.get('agent/name')}. Have you specified an agent to use a la ` --macro templates/agents/ppo.yml' ? ")
+        if False:
+            self.agent.load_checkpoint(self.experiment_directory)
 
     @property
     def checkpoint_now(self):
@@ -131,7 +141,6 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
             # Update obs (critical!)
             obs = next_obs
-
             if self.checkpoint_now:
                 self.agent.save_checkpoint(self.experiment_directory, self.step)
 
