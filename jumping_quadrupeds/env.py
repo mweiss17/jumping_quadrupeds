@@ -1,7 +1,6 @@
 import numpy as np
 import wandb
 import gym
-import SEVN_gym
 import importlib
 import cv2
 try:
@@ -10,6 +9,10 @@ try:
 except ImportError:
     dm_control = None
 
+try:
+    import SEVN_gym
+except ImportError:
+    SEVN_gym = None
 
 class VideoWrapper(gym.Wrapper):
     """Gathers up the frames from an episode and allows to upload them to Weights & Biases
