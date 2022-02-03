@@ -35,6 +35,9 @@ setup(
             "dm_control @ git+git://github.com/deepmind/dm_control.git",
             "dmc2gym @  git+git://github.com/denisyarats/dmc2gym.git",
             "mujoco_py",
+        ],
+        "meta": [
+            "torchmeta"
         ]
     },
 )

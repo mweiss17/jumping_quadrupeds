@@ -14,8 +14,8 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from torchmeta.datasets.helpers import miniimagenet
-from torchmeta.utils.data import NonEpisodicWrapper
+# from torchmeta.datasets.helpers import miniimagenet
+# from torchmeta.utils.data import NonEpisodicWrapper
 
 from jumping_quadrupeds.eth.dataset import Hdf5ImgDataset
 from jumping_quadrupeds.utils import common_img_transforms, abs_path
