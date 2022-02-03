@@ -22,6 +22,7 @@ setup(
         "torchvision",
         "moviepy",
         "imageio",
+        "einops",
         "rich",
         "submitit",
         "kornia",
