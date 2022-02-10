@@ -131,17 +131,8 @@ class DrQV2Agent:
         metrics["actor_loss"] = actor_loss.item()
         metrics["actor_logprob"] = log_prob.mean().item()
         metrics["actor_ent"] = dist.entropy().sum(dim=-1).mean().item()
-        action_mean = action.detach().mean(axis=0).cpu().numpy()
-        action_std = action.detach().std(axis=0).cpu().numpy()
-        metrics.update({
-            "act-mean-turn": action_mean[0],
-            "act-mean-gas": action_mean[1],
-            "act-mean-brake": action_mean[2],
-            "act-std-turn": action_std[0],
-            "act-std-gas": action_std[1],
-            "act-std-brake": action_std[2]
-        })
-
+        metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
+        metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
 
         return metrics
 
@@ -206,3 +197,14 @@ class DrQV2Agent:
             self.critic_opt.state_dict(),
             f"{exp_dir}/Weights/critic_opt-{epoch}.pt",
         )
+
+    def load_checkpoint(self, exp_dir, step=None):
+        chkpt_idx = step if step is not None else self.latest_chkpt(exp_dir)
+        print(f"loading checkpoint: {chkpt_idx}")
+        self.actor.load_state_dict(torch.load(f"{exp_dir}/Weights/actor-{chkpt_idx}.pt"))
+        self.critic.load_state_dict(torch.load(f"{exp_dir}/Weights/critic-{chkpt_idx}.pt"))
+        self.critic_target.load_state_dict(torch.load(f"{exp_dir}/Weights/critic_target-{chkpt_idx}.pt"))
+        self.encoder.load_state_dict(torch.load(f"{exp_dir}/Weights/encoder-{chkpt_idx}.pt"))
+        self.encoder_opt.load_state_dict(torch.load(f"{exp_dir}/Weights/encoder_opt-{chkpt_idx}.pt"))
+        self.actor_opt.load_state_dict(torch.load(f"{exp_dir}/Weights/actor_opt-{chkpt_idx}.pt"))
+        self.critic_opt.load_state_dict(torch.load(f"{exp_dir}/Weights/critic_opt-{chkpt_idx}.pt"))

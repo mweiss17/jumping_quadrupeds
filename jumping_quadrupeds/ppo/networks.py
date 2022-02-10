@@ -63,7 +63,7 @@ class CNNGaussianActor(Actor):
         self.low = action_space.low[0]
         self.high = action_space.high[0]
         self.linear = nn.Linear(64 * hidden_sizes, self.action_space.shape[0])
-        self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
+        self.log_std = torch.nn.Parameter(-log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
 
     def _distribution(self, obs):
         if len(obs.shape) == 3:

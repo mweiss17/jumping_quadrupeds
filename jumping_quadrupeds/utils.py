@@ -137,17 +137,17 @@ def set_seed(seed):
     torch.random.manual_seed(seed)
     return seed
 
-def build_loader(replay_dir, name=None, batch_size=None, **kwargs):
+def buffer_loader_factory(type=None, batch_size=None, **kwargs):
     def _worker_init_fn(worker_id):
         seed = np.random.get_state()[1][0] + worker_id
         np.random.seed(seed)
         random.seed(seed)
-    if name == "on-policy":
-        buffer = OnPolicyReplayBuffer(replay_dir, **kwargs)
-    elif name == "off-policy":
-        buffer = OffPolicyReplayBuffer(replay_dir, **kwargs)
-    elif name == "off-policy-sequential":
-        buffer = OffPolicySequentialReplayBuffer(replay_dir, **kwargs)
+    if type == "on-policy":
+        buffer = OnPolicyReplayBuffer(**kwargs)
+    elif type == "off-policy":
+        buffer = OffPolicyReplayBuffer(**kwargs)
+    elif type == "off-policy-sequential":
+        buffer = OffPolicySequentialReplayBuffer(**kwargs)
     else:
         raise ValueError(
             f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?")

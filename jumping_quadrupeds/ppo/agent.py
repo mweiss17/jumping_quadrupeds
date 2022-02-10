@@ -5,7 +5,7 @@ import torch
 from torch.optim import Adam
 from tqdm import tqdm
 from jumping_quadrupeds.ppo.networks import ConvActorCritic
-from jumping_quadrupeds.utils import preprocess_obs
+from jumping_quadrupeds.utils import preprocess_obs, to_torch
 
 class PPOAgent:
     """
@@ -79,9 +79,8 @@ class PPOAgent:
         )
 
 
-    def compute_loss_pi(self, data):
+    def compute_loss_pi(self, obs, act, adv, logp_old):
         """Computes policy loss"""
-        obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
         obs = preprocess_obs(obs, self.device)
 
         # Policy loss
@@ -110,23 +109,21 @@ class PPOAgent:
 
         return loss_pi, pi_info
 
-    def compute_loss_v(self, data):
+    def compute_loss_v(self, obs, ret):
         """Computes value loss"""
-        obs, ret = data["obs"], data["ret"]
         obs = preprocess_obs(obs, self.device)
-        value_estimate = self.ac.v(obs)
-        return value_estimate, ((value_estimate - ret) ** 2).mean()
+        return ((self.ac.v(obs) - ret) ** 2).mean()
 
-    def update(self, replay_iter, step):
+    def update(self, replay_loader, step):
         """Updates the policy and value function based on the latest replay buffer"""
         metrics = {}
-        data = next(replay_iter)
+        obs, action, rew, adv, ret, logp = to_torch(next(iter(replay_iter)).values(), self.device)
 
         self.ac.train()
 
         for i in range(self.train_pi_iters):
             self.pi_optimizer.zero_grad()
-            loss_pi, pi_info = self.compute_loss_pi(data)
+            loss_pi, pi_info = self.compute_loss_pi(obs, action, adv, logp)
             kl = np.mean(pi_info["kl"])
             if kl > self.target_kl:
                 tqdm.write(
@@ -138,42 +135,30 @@ class PPOAgent:
 
         for i in range(self.train_v_iters):
             self.vf_optimizer.zero_grad()
-            value_estimate, loss_v = self.compute_loss_v(data)
+            loss_v = self.compute_loss_v(obs, ret)
             loss_v.backward()
             self.vf_optimizer.step()
 
-        if self.use_wandb:
-            action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
-            action_std = data["act"].detach().std(axis=0).cpu().numpy()
-            logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
-            adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
-            adv_std = pi_info["adv"].detach().std().cpu().numpy()
-            ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
-            ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
-            metrics = {
-                    "act-mean-turn": action_mean[0],
-                    "act-mean-gas": action_mean[1],
-                    "act-mean-brake": action_mean[2],
-                    "log-p-turn": logp_mean[0],
-                    "log-p-gas": logp_mean[1],
-                    "log-p-brake": logp_mean[2],
-                    "act-std-turn": action_std[0],
-                    "act-std-gas": action_std[1],
-                    "act-std-brake": action_std[2],
-                    "loss-pi": loss_pi.detach().item(),
-                    "loss-v": loss_v.item(),
-                    "value-estimate": value_estimate.detach().mean().cpu().numpy(),
-                    "true-return": data["ret"].detach().mean().cpu().numpy(),
-                    "KL": kl,
-                    "entropy": np.mean(pi_info["ent"]),
-                    "clip-frac": np.mean(pi_info["cf"]),
-                    "adv-mean": adv_mean,
-                    "adv-std": adv_std,
-                    "ratio-mean": ratio_mean,
-                    "ratio-std": ratio_std,
-                }
-            if len(action_mean)>3:
-                metrics["act-mean-view"] = action_mean[3]
+        metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
+        metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
+        logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
+        adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
+        adv_std = pi_info["adv"].detach().std().cpu().numpy()
+        ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
+        ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
+        metrics.update({
+                "log-p": logp_mean,
+                "loss-pi": loss_pi.detach().item(),
+                "loss-v": loss_v.item(),
+                "true-return": ret.detach().mean().cpu().numpy(),
+                "KL": kl,
+                "entropy": np.mean(pi_info["ent"]),
+                "clip-frac": np.mean(pi_info["cf"]),
+                "adv-mean": adv_mean,
+                "adv-std": adv_std,
+                "ratio-mean": ratio_mean,
+                "ratio-std": ratio_std,
+            })
         return metrics
 
 

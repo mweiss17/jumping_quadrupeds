@@ -28,15 +28,18 @@ class MAEAgent:
         stddev_clip,
         log_std_init,
         patch_size=12,
-        vit_dim=256,
-        vit_depth=2,
-        vit_heads=8,
-        vit_mlp_dim=512,
-        vit_dropout=0.1,
-        vit_emb_dropout=0.1,
+        mae_encoder_dim=256,
+        mae_encoder_head_dim=64,
+        mae_encoder_depth=2,
+        mae_encoder_heads=8,
+        mae_encoder_mlp_dim=512,
+        mae_encoder_dropout=0.1,
+        mae_encoder_emb_dropout=0.1,
         mae_masking_ratio=0.75,
         mae_decoder_dim=512,
         mae_decoder_depth=2,
+        mae_decoder_heads=1,
+        mae_decoder_dim_head=128,
         **kwargs
     ):
         self.device = device
@@ -51,18 +54,21 @@ class MAEAgent:
             image_size=obs_space.shape[-1],
             patch_size=patch_size,
             num_classes=1000,
-            dim=vit_dim,
-            depth=vit_depth,
-            heads=vit_heads,
-            mlp_dim=vit_mlp_dim,
-            dropout=vit_dropout,
-            emb_dropout=vit_emb_dropout,
+            dim=mae_encoder_dim,
+            dim_head=mae_encoder_head_dim,
+            depth=mae_encoder_depth,
+            heads=mae_encoder_heads,
+            mlp_dim=mae_encoder_mlp_dim,
+            dropout=mae_encoder_dropout,
+            emb_dropout=mae_encoder_emb_dropout,
         ).to(device)
         mae = MAE(
             encoder=vit,
             masking_ratio=mae_masking_ratio,  # the paper recommended 75% masked patches
             decoder_dim=mae_decoder_dim,  # paper showed good results with just 512
             decoder_depth=mae_decoder_depth,  # anywhere from 1 to 8
+            decoder_dim_head=mae_decoder_dim_head,
+            decoder_heads=mae_decoder_heads,
             device=device,
         )
 
@@ -163,18 +169,8 @@ class MAEAgent:
         metrics["actor_loss"] = actor_loss.item()
         metrics["actor_logprob"] = log_prob.mean().item()
         metrics["actor_ent"] = dist.entropy().sum(dim=-1).mean().item()
-        action_mean = action.detach().mean(axis=0).cpu().numpy()
-        action_std = action.detach().std(axis=0).cpu().numpy()
-        metrics.update({
-            "act-mean-turn": action_mean[0],
-            "act-mean-gas": action_mean[1],
-            "act-mean-brake": action_mean[2],
-            "act-std-turn": action_std[0],
-            "act-std-gas": action_std[1],
-            "act-std-brake": action_std[2]
-        })
-
-
+        metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
+        metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
         return metrics
 
     def mae_update(self, obs):
@@ -186,10 +182,9 @@ class MAEAgent:
         metrics["mae_loss"] = recon_loss.cpu().item()
         return metrics
 
-    def update(self, replay_iter, step):
+    def update(self, replay_loader, step):
         metrics = dict()
-
-        obs, action, reward, discount, next_obs = to_torch(next(replay_iter).values(), self.device)
+        obs, action, reward, discount, next_obs = to_torch(next(replay_loader).values(), self.device)
 
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)

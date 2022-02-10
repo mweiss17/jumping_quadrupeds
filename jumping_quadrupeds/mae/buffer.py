@@ -8,8 +8,8 @@ def episode_len(episode):
 
 
 class OffPolicyReplayBuffer(ReplayBuffer):
-    def __init__(self, replay_dir=None, **kwargs):
-        super().__init__(replay_dir=replay_dir, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._nstep = kwargs.get("nstep")
 
     def _sample(self):

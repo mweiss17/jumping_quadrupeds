@@ -286,17 +286,8 @@ class SPRAgent:
         metrics["actor_loss"] = actor_loss.item()
         metrics["actor_logprob"] = log_prob.mean().item()
         metrics["actor_ent"] = dist.entropy().sum(dim=-1).mean().item()
-        action_mean = action.detach().mean(axis=0).cpu().numpy()
-        action_std = action.detach().std(axis=0).cpu().numpy()
-        metrics.update({
-            "act-mean-turn": action_mean[0],
-            "act-mean-gas": action_mean[1],
-            "act-mean-brake": action_mean[2],
-            "act-std-turn": action_std[0],
-            "act-std-gas": action_std[1],
-            "act-std-brake": action_std[2]
-        })
-
+        metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
+        metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
 
         return metrics
 

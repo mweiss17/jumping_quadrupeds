@@ -6,9 +6,9 @@ from tqdm import trange
 from collections import defaultdict
 from pathlib import Path
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
-from jumping_quadrupeds.buffer import ReplayBufferStorage
+from jumping_quadrupeds.buffer import ReplayBuffer
 from jumping_quadrupeds.env import make_env
-from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, build_loader
+from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, buffer_loader_factory
 from jumping_quadrupeds.ppo.agent import PPOAgent
 from jumping_quadrupeds.drqv2.agent import DrQV2Agent
 from jumping_quadrupeds.spr.agent import SPRAgent
@@ -19,10 +19,12 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     WANDB_ENTITY = "jumping_quadrupeds"
     WANDB_PROJECT = "rl-encoder-test"
 
-    def __init__(self):
+    def __init__(self, skip_setup=False):
         super(Trainer, self).__init__()
-        self.auto_setup()
+        if not skip_setup:
+            self.auto_setup()
 
+    def _build(self):
         if self.get("use_wandb"):
             self.initialize_wandb()
 
@@ -47,15 +49,9 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         ]
 
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
-        self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
-        self.replay_loader = build_loader(replay_dir, **self.get("buffer/kwargs"))
-        self._replay_iter = None
-
-    @property
-    def replay_iter(self):
-        if self._replay_iter is None:
-            self._replay_iter = iter(self.replay_loader)
-        return self._replay_iter
+        replay_loader_kwargs = self.get("buffer/kwargs")
+        replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
+        self.replay_loader = buffer_loader_factory(**replay_loader_kwargs)
 
     def _build_agent(self):
         if self.get("agent/name") == "ppo":
@@ -127,9 +123,24 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             )
             self.env.send_wandb_video()
 
+    def compute_env_specific_metrics(self, metrics):
+        if "CarRacing" in self.get("env/kwargs/name"):
+            metrics.update({
+                "act-mean-turn": metrics["update_actor_action_mean"][0],
+                "act-mean-gas": metrics["update_actor_action_mean"][1],
+                "act-mean-brake": metrics["update_actor_action_mean"][2],
+                "act-std-turn": metrics["update_actor_action_std"][0],
+                "act-std-gas": metrics["update_actor_action_std"][1],
+                "act-std-brake": metrics["update_actor_action_std"][2]
+            })
+            if len(metrics["update_actor_action_mean"])>3:
+                metrics["act-mean-view"] = metrics["update_actor_action_mean"][3]
+
+        return metrics
 
     @register_default_dispatch
     def __call__(self):
+        self._build()
         obs = self.env.reset()
         for _ in trange(self.get("total_steps")):
             action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
@@ -137,7 +148,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
             self.episode_returns[self.ep_idx].append(reward)
             self.next_step()
-            self.replay_storage.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
+            self.replay_loader.dataset.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
 
             # Update obs (critical!)
             obs = next_obs
@@ -145,13 +156,14 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.agent.save_checkpoint(self.experiment_directory, self.step)
 
             if done or self.episode_timeout:
-                self.replay_storage.finish_episode()
+                self.replay_loader.dataset.finish_episode()
                 self.write_logs()
                 self.ep_idx += 1
                 obs = self.env.reset()
 
             if self.update_now:
-                metrics = self.agent.update(self.replay_iter, self.step)
+                metrics = self.agent.update(iter(self.replay_loader), self.step)
+                metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
                     self.wandb_log(**metrics)
 

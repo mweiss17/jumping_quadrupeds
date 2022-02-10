@@ -28,9 +28,76 @@ def load_episode(fn):
         return episode
 
 
-class ReplayBufferStorage:
-    def __init__(self, data_specs, replay_dir):
+# class ReplayBufferStorage:
+#     def __init__(self, data_specs, replay_dir):
+#         self._data_specs = data_specs
+#         self._replay_dir = replay_dir
+#         self._replay_dir.mkdir(exist_ok=True)
+#         self._current_episode = defaultdict(list)
+#         self._preload()
+#
+#     def __len__(self):
+#         return self._num_transitions
+#
+#     def add(self, step):
+#         # we have to do this because we don't know the discount from dm_control, assume 1.0
+#         if not step.get("discount"):
+#             step["discount"] = 1.0
+#         for spec in self._data_specs:
+#             value = step[spec.name]
+#             if np.isscalar(value):
+#                 value = np.full(spec.shape, value, spec.dtype)
+#             assert spec.shape == value.shape and spec.dtype == value.dtype
+#             self._current_episode[spec.name].append(value)
+#
+#     def finish_episode(self):
+#         episode = dict()
+#         for spec in self._data_specs:
+#             value = self._current_episode[spec.name]
+#             episode[spec.name] = np.array(value, spec.dtype)
+#         self._current_episode = defaultdict(list)
+#         eps_idx = self._num_episodes
+#         eps_len = episode_len(episode)
+#         self._num_episodes += 1
+#         self._num_transitions += eps_len
+#         ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+#         eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
+#         save_episode(episode, self._replay_dir / eps_fn)
+#
+#     def _preload(self):
+#         self._num_episodes = 0
+#         self._num_transitions = 0
+#         for fn in self._replay_dir.glob("*.npz"):
+#             _, _, eps_len = fn.stem.split("_")
+#             self._num_episodes += 1
+#             self._num_transitions += int(eps_len)
+
+
+
+class ReplayBuffer(IterableDataset):
+    def __init__(
+        self,
+        replay_dir,
+        data_specs,
+        max_size,
+        num_workers,
+        discount,
+        save_snapshot,
+        fetch_every,
+        **kwargs,
+    ):
         self._data_specs = data_specs
+        self._replay_dir = replay_dir
+        self._size = 0
+        self._max_size = max_size
+        self._num_workers = max(1, num_workers)
+        self._max_size_per_worker = max_size // self._num_workers
+        self._episode_fns = []
+        self._episodes = dict()
+        self._discount = discount
+        self._fetch_every = fetch_every
+        self._samples_since_last_fetch = fetch_every
+        self._save_snapshot = save_snapshot
         self._replay_dir = replay_dir
         self._replay_dir.mkdir(exist_ok=True)
         self._current_episode = defaultdict(list)
@@ -72,31 +139,6 @@ class ReplayBufferStorage:
             self._num_episodes += 1
             self._num_transitions += int(eps_len)
 
-
-
-class ReplayBuffer(IterableDataset):
-    def __init__(
-        self,
-        replay_dir,
-        max_size,
-        num_workers,
-        discount,
-        save_snapshot,
-        fetch_every,
-        **kwargs,
-    ):
-        self._replay_dir = replay_dir
-        self._size = 0
-        self._max_size = max_size
-        self._num_workers = max(1, num_workers)
-        self._max_size_per_worker = max_size // self._num_workers
-        self._episode_fns = []
-        self._episodes = dict()
-        self._discount = discount
-        self._fetch_every = fetch_every
-        self._samples_since_last_fetch = fetch_every
-        self._save_snapshot = save_snapshot
-
     def _sample_episode(self):
         try:
             eps_fn = random.choice(self._episode_fns)
@@ -136,7 +178,6 @@ class ReplayBuffer(IterableDataset):
         eps_fns = sorted(self._replay_dir.glob("*.npz"), reverse=True)
         fetched_size = 0
         for eps_fn in eps_fns:
-
             eps_idx, eps_len = [int(x) for x in eps_fn.stem.split("_")[1:]]
             if eps_idx % self._num_workers != worker_id:
                 continue

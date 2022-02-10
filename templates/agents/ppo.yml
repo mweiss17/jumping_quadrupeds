@@ -3,8 +3,8 @@ agent:
   name: "ppo"
   kwargs:
     clip_ratio: 0.2 #(float): clips the amount that the old policy can change
-    pi_lr: 1.0e-4 # (float): Learning rate for policy optimizer.
-    vf_lr: 1.0e-5 #  (float): Learning rate for value function optimizer.
+    pi_lr: 3.0e-4 # (float): Learning rate for policy optimizer.
+    vf_lr: 1.0e-3 #  (float): Learning rate for value function optimizer.
     train_pi_iters: 4 #(int): Maximum number of gradient descent steps to take on policy loss per epoch.
     train_v_iters: 4 # (int): Number of gradient descent steps to take on value function per epoch.
     target_kl: 0.02 # (float): Roughly what KL divergence we think is appropriate between new and old policies after an update.
@@ -23,7 +23,7 @@ buffer:
     name: "on-policy"
     max_size:  4000
     batch_size: 4000
-    fetch_every: 4000
+    fetch_every: 1000
     num_workers: 0
     save_snapshot: True
     discount: 0.99
