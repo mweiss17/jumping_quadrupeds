@@ -1,10 +1,12 @@
 import torch
 import sys
+import os
 import numpy as np
 import submitit
 from tqdm import trange
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional, Union
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.buffer import ReplayBuffer
 from jumping_quadrupeds.env import make_env
@@ -116,14 +118,14 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         return False
 
     @property
-    def episode_returns(self):
+    def episode_rets(self):
         ep_rets = list(dict(self.episode_returns).values())
         ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
         return ep_rets
 
     @property
     def mean_return(self):
-        return np.mean(self.episode_returns.sum(axis=1))
+        return np.mean(self.episode_rets.sum(axis=1))
 
     def write_logs(self):
         ep_rets = list(dict(self.episode_returns).values())
