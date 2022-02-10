@@ -108,6 +108,23 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) > self.get("buffer/kwargs/nstep", 1)
         return update_every and gt_seed_frames and ep_len_gt_nstep
 
+    @property
+    def checkpoint_best(self):
+        if self.mean_return > self.read_from_cache("best_ep_mean_return", -10000.0):
+            self.write_to_cache("best_ep_mean_return", self.mean_return)
+            return True
+        return False
+
+    @property
+    def episode_returns(self):
+        ep_rets = list(dict(self.episode_returns).values())
+        ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
+        return ep_rets
+
+    @property
+    def mean_return(self):
+        return np.mean(self.episode_returns.sum(axis=1))
+
     def write_logs(self):
         ep_rets = list(dict(self.episode_returns).values())
         ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
@@ -138,6 +155,25 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
         return metrics
 
+    def save(
+        self,
+        checkpoint_path: Optional[str] = None,
+        is_latest: bool = False,
+        is_best: bool = False,
+    ):
+        if checkpoint_path is None:
+            if is_latest:
+                checkpoint_path = os.path.join(
+                    self.checkpoint_directory, "checkpoint_latest.pt"
+                )
+            elif is_best:
+                checkpoint_path = os.path.join(
+                    self.checkpoint_directory, "checkpoint_best.pt"
+                )
+            else:
+                return 
+        self.agent.save_checkpoint(checkpoint_path)
+
     @register_default_dispatch
     def __call__(self):
         self._build()
@@ -150,11 +186,6 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             self.next_step()
             self.replay_loader.dataset.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
 
-            # Update obs (critical!)
-            obs = next_obs
-            if self.checkpoint_now:
-                self.agent.save_checkpoint(self.experiment_directory, self.step)
-
             if done or self.episode_timeout:
                 self.replay_loader.dataset.finish_episode()
                 self.write_logs()
@@ -166,6 +197,13 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
                     self.wandb_log(**metrics)
+
+            # Update obs (critical!)
+            obs = next_obs
+            self.save(is_best=self.checkpoint_best)
+            if self.checkpoint_now:
+                self.save(checkpoint_path=self.checkpoint_path)
+                self.save(is_latest=True)
 
 
 

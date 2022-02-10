@@ -384,35 +384,27 @@ class SPRAgent:
                                   self.momentum_tau)
         return spr_loss
 
-    def save_checkpoint(self, exp_dir, epoch):
-        torch.save(
-            self.actor.state_dict(),
-            f"{exp_dir}/Weights/actor-{epoch}.pt",
-        )
-        torch.save(
-            self.critic.state_dict(),
-            f"{exp_dir}/Weights/critic-{epoch}.pt",
-        )
-        torch.save(
-            self.critic_target.state_dict(),
-            f"{exp_dir}/Weights/critic_target-{epoch}.pt",
-        )
-        torch.save(
-            self.encoder.state_dict(),
-            f"{exp_dir}/Weights/encoder-{epoch}.pt",
-        )
-        torch.save(
-            self.encoder_opt.state_dict(),
-            f"{exp_dir}/Weights/encoder_opt-{epoch}.pt",
-        )
-        torch.save(
-            self.actor_opt.state_dict(),
-            f"{exp_dir}/Weights/actor_opt-{epoch}.pt",
-        )
-        torch.save(
-            self.critic_opt.state_dict(),
-            f"{exp_dir}/Weights/critic_opt-{epoch}.pt",
-        )
+    def save_checkpoint(self, path):
+        checkpoint = {'actor': self.actor.state_dict(),
+                      'critic': self.critic.state_dict(),
+                      'critic_target': self.critic_target.state_dict(),
+                      'encoder': self.encoder.state_dict(),
+                      'encoder_opt': self.encoder_opt.state_dict(),
+                      'actor_opt': self.actor_opt.state_dict(),
+                      'critic_opt': self.critic_opt.state_dict(),
+                      }
+        torch.save(checkpoint, path)
+
+    def load_checkpoint(self, path):
+        print(f"loading checkpoint from: {path}")
+        checkpoint = torch.load(path)
+        self.actor.load_state_dict(checkpoint['actor'])
+        self.critic.load_state_dict(checkpoint['critic'])
+        self.critic_target.load_state_dict(checkpoint['critic_target'])
+        self.encoder.load_state_dict(checkpoint['encoder'])
+        self.encoder_opt.load_state_dict(checkpoint['encoder_opt'])
+        self.actor_opt.load_state_dict(checkpoint['actor_opt'])
+        self.critic_opt.load_state_dict(checkpoint['critic_opt'])
 
 def renormalize(tensor, first_dim=1):
     if first_dim < 0:

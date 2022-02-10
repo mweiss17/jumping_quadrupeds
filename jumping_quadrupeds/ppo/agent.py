@@ -162,28 +162,19 @@ class PPOAgent:
         return metrics
 
 
-    def save_checkpoint(self, exp_dir, epoch):
-        torch.save(
-            self.ac.state_dict(),
-            f"{exp_dir}/Weights/ac-{epoch}.pt",
-        )
-        torch.save(
-            self.pi_optimizer.state_dict(),
-            f"{exp_dir}/Weights/pi-optim-{epoch}.pt",
-        )
-        torch.save(
-            self.vf_optimizer.state_dict(),
-            f"{exp_dir}/Weights/vf-optim-{epoch}.pt",
-        )
+    def save_checkpoint(self, path):
+        checkpoint = {'ac': self.ac.state_dict(),
+                      'actor_opt': self.pi_optimizer.state_dict(),
+                      'critic_opt': self.vf_optimizer.state_dict(),
+                      }
+        torch.save(checkpoint, path)
 
-    def load_checkpoint(self):
-        self.ac.load_state_dict(torch.load(self.ac_checkpoint))
-        self.pi_optimizer.load_state_dict(
-            torch.load(self.pi_optim_checkpoint)
-        )
-        self.vf_optimizer.load_state_dict(
-            torch.load(self.vf_optim_checkpoint)
-        )
+    def load_checkpoint(self, path):
+        print(f"loading checkpoint from: {path}")
+        checkpoint = torch.load(path)
+        self.ac.load_state_dict(checkpoint['ac'])
+        self.pi_optimizer.load_state_dict(checkpoint['actor_opt'])
+        self.vf_optimizer.load_state_dict(checkpoint['critic_opt'])
 
 
     def act(self, obs, step, eval_mode):
