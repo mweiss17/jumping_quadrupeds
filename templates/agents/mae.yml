@@ -11,7 +11,7 @@ agent:
     feature_dim: 50
     stddev_clip: 0.3
     num_seed_frames: 1000
-    update_every_steps: 10
+    update_every_steps: 5
     log_std_init: null # exp(-.5) = .6 set to null to disable
     stddev_schedule:
       name: linear
@@ -26,10 +26,10 @@ agent:
     mae_encoder_mlp_dim: 128  # 2048
     mae_encoder_dropout: 0.0
     mae_encoder_emb_dropout: 0.0
-    mae_decoder_dim: 64
+    mae_decoder_dim: 512 #64 * nheads
     mae_decoder_depth: 1
     mae_decoder_dim_head: 64
-    mae_decoder_heads: 4
+    mae_decoder_heads: 8
 #            decoder_depth=1,
 #            decoder_heads=8,
 #            decoder_dim_head=64,

@@ -33,7 +33,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.episode_returns = defaultdict(list)
         self.ep_idx = 0
 
@@ -57,11 +57,13 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
     def _build_agent(self):
         if self.get("agent/name") == "ppo":
-            self.agent = PPOAgent(self.env.observation_space,
-                                  self.env.action_space,
-                                  self.get("use_wandb"),
-                                  device=self.device,
-                                  **self.get("agent/kwargs"))
+            self.agent = PPOAgent(
+                self.env.observation_space,
+                self.env.action_space,
+                self.get("use_wandb"),
+                device=self.device,
+                **self.get("agent/kwargs"),
+            )
             if self.get("use_wandb"):
                 self.wandb_watch(self.agent.ac.pi, log_freq=1)
                 self.wandb_watch(self.agent.ac.v, log_freq=1)
@@ -89,7 +91,9 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 **self.get("agent/kwargs"),
             )
         else:
-            raise ValueError(f"Unknown agent {self.get('agent/name')}. Have you specified an agent to use a la ` --macro templates/agents/ppo.yml' ? ")
+            raise ValueError(
+                f"Unknown agent {self.get('agent/name')}. Have you specified an agent to use a la ` --macro templates/agents/ppo.yml' ? "
+            )
         if False:
             self.agent.load_checkpoint(self.experiment_directory)
 
@@ -107,7 +111,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     def update_now(self):
         update_every = self.step % self.get("agent/kwargs/update_every_steps") == 0 and self.step > 0
         gt_seed_frames = self.step > self.get("agent/kwargs/num_seed_frames")
-        ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) > self.get("buffer/kwargs/nstep", 1)
+        ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) >= self.get("buffer/kwargs/nstep", 0)
         return update_every and gt_seed_frames and ep_len_gt_nstep
 
     @property
@@ -144,15 +148,17 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
     def compute_env_specific_metrics(self, metrics):
         if "CarRacing" in self.get("env/kwargs/name"):
-            metrics.update({
-                "act-mean-turn": metrics["update_actor_action_mean"][0],
-                "act-mean-gas": metrics["update_actor_action_mean"][1],
-                "act-mean-brake": metrics["update_actor_action_mean"][2],
-                "act-std-turn": metrics["update_actor_action_std"][0],
-                "act-std-gas": metrics["update_actor_action_std"][1],
-                "act-std-brake": metrics["update_actor_action_std"][2]
-            })
-            if len(metrics["update_actor_action_mean"])>3:
+            metrics.update(
+                {
+                    "act-mean-turn": metrics["update_actor_action_mean"][0],
+                    "act-mean-gas": metrics["update_actor_action_mean"][1],
+                    "act-mean-brake": metrics["update_actor_action_mean"][2],
+                    "act-std-turn": metrics["update_actor_action_std"][0],
+                    "act-std-gas": metrics["update_actor_action_std"][1],
+                    "act-std-brake": metrics["update_actor_action_std"][2],
+                }
+            )
+            if len(metrics["update_actor_action_mean"]) > 3:
                 metrics["act-mean-view"] = metrics["update_actor_action_mean"][3]
 
         return metrics
@@ -165,15 +171,11 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     ):
         if checkpoint_path is None:
             if is_latest:
-                checkpoint_path = os.path.join(
-                    self.checkpoint_directory, "checkpoint_latest.pt"
-                )
+                checkpoint_path = os.path.join(self.checkpoint_directory, "checkpoint_latest.pt")
             elif is_best:
-                checkpoint_path = os.path.join(
-                    self.checkpoint_directory, "checkpoint_best.pt"
-                )
+                checkpoint_path = os.path.join(self.checkpoint_directory, "checkpoint_best.pt")
             else:
-                return 
+                return
         self.agent.save_checkpoint(checkpoint_path)
 
     @register_default_dispatch
@@ -195,6 +197,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 obs = self.env.reset()
 
             if self.update_now:
+                breakpoint()
                 metrics = self.agent.update(iter(self.replay_loader), self.step)
                 metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
@@ -208,7 +211,6 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.save(is_latest=True)
 
 
-
 if __name__ == "__main__":
     # Default cmdline args Flo
     if len(sys.argv) == 1:
@@ -218,7 +220,7 @@ if __name__ == "__main__":
             "--inherit",
             "templates/base",
             "--macro",
-            "templates/agents/ppo.yml"
+            "templates/agents/ppo.yml",
         ]
 
     Trainer().run()

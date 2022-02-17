@@ -22,7 +22,7 @@ agent:
 ### Off-Policy Buffer Configuration ###
 buffer:
   kwargs:
-    name: "off-policy"
+    type: "off-policy"
     max_size:  1000000
     nstep: 3
     batch_size: 256

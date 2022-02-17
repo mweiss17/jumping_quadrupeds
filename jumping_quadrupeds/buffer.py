@@ -28,52 +28,6 @@ def load_episode(fn):
         return episode
 
 
-# class ReplayBufferStorage:
-#     def __init__(self, data_specs, replay_dir):
-#         self._data_specs = data_specs
-#         self._replay_dir = replay_dir
-#         self._replay_dir.mkdir(exist_ok=True)
-#         self._current_episode = defaultdict(list)
-#         self._preload()
-#
-#     def __len__(self):
-#         return self._num_transitions
-#
-#     def add(self, step):
-#         # we have to do this because we don't know the discount from dm_control, assume 1.0
-#         if not step.get("discount"):
-#             step["discount"] = 1.0
-#         for spec in self._data_specs:
-#             value = step[spec.name]
-#             if np.isscalar(value):
-#                 value = np.full(spec.shape, value, spec.dtype)
-#             assert spec.shape == value.shape and spec.dtype == value.dtype
-#             self._current_episode[spec.name].append(value)
-#
-#     def finish_episode(self):
-#         episode = dict()
-#         for spec in self._data_specs:
-#             value = self._current_episode[spec.name]
-#             episode[spec.name] = np.array(value, spec.dtype)
-#         self._current_episode = defaultdict(list)
-#         eps_idx = self._num_episodes
-#         eps_len = episode_len(episode)
-#         self._num_episodes += 1
-#         self._num_transitions += eps_len
-#         ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-#         eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
-#         save_episode(episode, self._replay_dir / eps_fn)
-#
-#     def _preload(self):
-#         self._num_episodes = 0
-#         self._num_transitions = 0
-#         for fn in self._replay_dir.glob("*.npz"):
-#             _, _, eps_len = fn.stem.split("_")
-#             self._num_episodes += 1
-#             self._num_transitions += int(eps_len)
-
-
-
 class ReplayBuffer(IterableDataset):
     def __init__(
         self,
@@ -109,7 +63,7 @@ class ReplayBuffer(IterableDataset):
     def add(self, step):
         # we have to do this because we don't know the discount from dm_control, assume 1.0
         if not step.get("discount"):
-            step["discount"] = 1.0
+            step["discount"] = self._discount
         for spec in self._data_specs:
             value = step[spec.name]
             if np.isscalar(value):
@@ -195,5 +149,3 @@ class ReplayBuffer(IterableDataset):
     def __iter__(self):
         while True:
             yield self._sample()
-
-

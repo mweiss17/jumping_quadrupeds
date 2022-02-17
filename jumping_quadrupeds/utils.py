@@ -16,6 +16,7 @@ from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
 DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
 ### FILE ADAPTED FROM OPENAI SPINNINGUP, https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo
 
+
 def schedule(schdl, step, log_std):
     try:
         return float(schdl)
@@ -33,9 +34,7 @@ def schedule(schdl, step, log_std):
             return (1.0 - mix) * init + mix * final, duration
         match = re.match(r"step_linear\((.+),(.+),(.+),(.+),(.+)\)", schdl)
         if match:
-            init, final1, duration1, final2, duration2 = [
-                float(g) for g in match.groups()
-            ]
+            init, final1, duration1, final2, duration2 = [float(g) for g in match.groups()]
 
             if step <= duration1:
                 mix = np.clip(step / duration1, 0.0, 1.0)
@@ -124,6 +123,7 @@ class TruncatedNormal(pyd.Normal):
         x = self.loc + eps
         return self._clamp(x)
 
+
 def preprocess_obs(obs, device):
     assert obs.dtype == np.uint8 or obs.dtype == torch.uint8
     if obs.dtype == np.uint8:
@@ -132,16 +132,19 @@ def preprocess_obs(obs, device):
     obs = obs / 255.0
     return obs
 
+
 def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
     return seed
+
 
 def buffer_loader_factory(type=None, batch_size=None, **kwargs):
     def _worker_init_fn(worker_id):
         seed = np.random.get_state()[1][0] + worker_id
         np.random.seed(seed)
         random.seed(seed)
+
     if type == "on-policy":
         buffer = OnPolicyReplayBuffer(**kwargs)
     elif type == "off-policy":
@@ -150,8 +153,8 @@ def buffer_loader_factory(type=None, batch_size=None, **kwargs):
         buffer = OffPolicySequentialReplayBuffer(**kwargs)
     else:
         raise ValueError(
-            f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?")
-
+            f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
+        )
 
     loader = torch.utils.data.DataLoader(
         buffer,

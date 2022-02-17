@@ -101,9 +101,7 @@ class ConvActorCritic(AbstractActorCritic):
         channels = observation_space.shape[0]
 
         actor_encoder = WorldModelsConvEncoder(channels)
-        critic_encoder = (
-            actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
-        )
+        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space,
