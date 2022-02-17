@@ -54,6 +54,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         replay_loader_kwargs = self.get("buffer/kwargs")
         replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
         self.replay_loader = buffer_loader_factory(**replay_loader_kwargs)
+        self.replay_iter = iter(self.replay_loader)
 
     def _build_agent(self):
         if self.get("agent/name") == "ppo":
@@ -185,7 +186,6 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         for _ in trange(self.get("total_steps")):
             action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
             next_obs, reward, done, misc = self.env.step(action)
-
             self.episode_returns[self.ep_idx].append(reward)
             self.next_step()
             self.replay_loader.dataset.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
@@ -194,18 +194,17 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.replay_loader.dataset.finish_episode()
                 self.write_logs()
                 self.ep_idx += 1
+                self.save(is_best=self.checkpoint_best)
                 obs = self.env.reset()
 
             if self.update_now:
-                breakpoint()
-                metrics = self.agent.update(iter(self.replay_loader), self.step)
+                metrics = self.agent.update(self.replay_iter, self.step)
                 metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
                     self.wandb_log(**metrics)
 
             # Update obs (critical!)
             obs = next_obs
-            self.save(is_best=self.checkpoint_best)
             if self.checkpoint_now:
                 self.save(checkpoint_path=self.checkpoint_path)
                 self.save(is_latest=True)

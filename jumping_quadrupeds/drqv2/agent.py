@@ -149,7 +149,6 @@ class DrQV2Agent:
         obs = self.encoder(obs)
         with torch.no_grad():
             next_obs = self.encoder(next_obs)
-        breakpoint()
         metrics["batch_reward"] = reward.mean().item()
 
         # update critic
