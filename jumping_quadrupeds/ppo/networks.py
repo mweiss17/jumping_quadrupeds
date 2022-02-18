@@ -68,6 +68,7 @@ class CNNGaussianActor(Actor):
     def _distribution(self, obs):
         if len(obs.shape) == 3:
             obs = obs.unsqueeze(0)
+        breakpoint()
         preactivations = self.encoder(obs)
         mu = torch.tanh(self.linear(preactivations))
         std = torch.exp(self.log_std)

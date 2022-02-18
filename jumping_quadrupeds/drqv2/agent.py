@@ -137,6 +137,7 @@ class DrQV2Agent:
         metrics = dict()
 
         obs, action, reward, discount, next_obs = to_torch(next(replay_iter).values(), self.device)
+        breakpoint()
 
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)

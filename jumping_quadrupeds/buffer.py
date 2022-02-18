@@ -8,11 +8,6 @@ from torch.utils.data import IterableDataset
 from collections import defaultdict
 
 
-def episode_len(episode):
-    # subtract -1 because the dummy first transition
-    return next(iter(episode.values())).shape[0] - 1
-
-
 def save_episode(episode, fn):
     with io.BytesIO() as bs:
         np.savez_compressed(bs, **episode)
@@ -65,9 +60,11 @@ class ReplayBuffer(IterableDataset):
         if not step.get("discount"):
             step["discount"] = self._discount
         for spec in self._data_specs:
-            value = step[spec.name]
+            value = step.get(spec.name, None)
             if np.isscalar(value):
                 value = np.full(spec.shape, value, spec.dtype)
+            if value is None:
+                continue
             assert spec.shape == value.shape and spec.dtype == value.dtype
             self._current_episode[spec.name].append(value)
 
@@ -78,7 +75,7 @@ class ReplayBuffer(IterableDataset):
             episode[spec.name] = np.array(value, spec.dtype)
         self._current_episode = defaultdict(list)
         eps_idx = self._num_episodes
-        eps_len = episode_len(episode)
+        eps_len = self.episode_len(episode)
         self._num_episodes += 1
         self._num_transitions += eps_len
         ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -105,11 +102,11 @@ class ReplayBuffer(IterableDataset):
             episode = load_episode(eps_fn)
         except:
             return False
-        eps_len = episode_len(episode)
+        eps_len = self.episode_len(episode)
         while eps_len + self._size > self._max_size_per_worker:
             early_eps_fn = self._episode_fns.pop(0)
             early_eps = self._episodes.pop(early_eps_fn)
-            self._size -= episode_len(early_eps)
+            self._size -= self.episode_len(early_eps)
             early_eps_fn.unlink(missing_ok=True)
         self._episode_fns.append(eps_fn)
         self._episode_fns.sort()
@@ -142,6 +139,10 @@ class ReplayBuffer(IterableDataset):
             fetched_size += eps_len
             if not self._store_episode(eps_fn):
                 break
+
+    def episode_len(self, episode):
+        # -1 for dummy transition (first is just an obs)
+        return next(iter(episode.values())).shape[0] - 1
 
     def _sample(self):
         pass

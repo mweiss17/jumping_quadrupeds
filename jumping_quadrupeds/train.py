@@ -33,7 +33,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self.episode_returns = defaultdict(list)
         self.ep_idx = 0
 
@@ -54,7 +54,13 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         replay_loader_kwargs = self.get("buffer/kwargs")
         replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
         self.replay_loader = buffer_loader_factory(**replay_loader_kwargs)
-        self.replay_iter = iter(self.replay_loader)
+        self._replay_iter = None
+
+    @property
+    def replay_iter(self):
+        if self._replay_iter is None:
+            self._replay_iter = iter(self.replay_loader)
+        return self._replay_iter
 
     def _build_agent(self):
         if self.get("agent/name") == "ppo":
@@ -112,7 +118,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     def update_now(self):
         update_every = self.step % self.get("agent/kwargs/update_every_steps") == 0 and self.step > 0
         gt_seed_frames = self.step > self.get("agent/kwargs/num_seed_frames")
-        ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) >= self.get("buffer/kwargs/nstep", 0)
+        ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) >= (self.get("buffer/kwargs/nstep", 0) + 1)
         return update_every and gt_seed_frames and ep_len_gt_nstep
 
     @property
@@ -183,12 +189,16 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     def __call__(self):
         self._build()
         obs = self.env.reset()
+        self.replay_loader.dataset.add({"obs": np.array(obs)})
+
         for _ in trange(self.get("total_steps")):
             action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
             next_obs, reward, done, misc = self.env.step(action)
             self.episode_returns[self.ep_idx].append(reward)
             self.next_step()
-            self.replay_loader.dataset.add({"obs": obs, "act": action, "rew": reward, "val": val, "logp": logp})
+            self.replay_loader.dataset.add(
+                {"obs": np.array(obs), "act": action, "rew": reward, "val": val, "logp": logp}
+            )
 
             if done or self.episode_timeout:
                 self.replay_loader.dataset.finish_episode()
@@ -196,6 +206,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.ep_idx += 1
                 self.save(is_best=self.checkpoint_best)
                 obs = self.env.reset()
+                self.replay_loader.dataset.add({"obs": np.array(obs)})
 
             if self.update_now:
                 metrics = self.agent.update(self.replay_iter, self.step)

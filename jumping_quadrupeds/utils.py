@@ -127,7 +127,7 @@ class TruncatedNormal(pyd.Normal):
 def preprocess_obs(obs, device):
     assert obs.dtype == np.uint8 or obs.dtype == torch.uint8
     if obs.dtype == np.uint8:
-        obs = torch.tensor(obs.copy(), dtype=torch.float32)
+        obs = torch.tensor(np.array(obs), dtype=torch.float32)
     obs = obs.to(device)
     obs = obs / 255.0
     return obs

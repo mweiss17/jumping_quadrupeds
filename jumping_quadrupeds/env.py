@@ -1,11 +1,17 @@
+import torch
 import numpy as np
 import wandb
 import gym
 import importlib
 import cv2
+from collections import deque
+from einops import rearrange
+from jumping_quadrupeds.frame_stack import FrameStack
+
 try:
     import dm_control
     import dmc2gym
+    from dm_control.suite.wrappers import action_scale, pixels
 except ImportError:
     dm_control = None
 
@@ -13,6 +19,7 @@ try:
     import SEVN_gym
 except ImportError:
     SEVN_gym = None
+
 
 class VideoWrapper(gym.Wrapper):
     """Gathers up the frames from an episode and allows to upload them to Weights & Biases
@@ -41,7 +48,7 @@ class VideoWrapper(gym.Wrapper):
 
         return state
 
-    def step(self, action, render_type="state_pixels"): #rgb_array
+    def step(self, action, render_type="state_pixels"):  # rgb_array
         state, reward, done, info = self.env.step(action)
 
         if self.episode_no + 1 == self.render_every_n_episodes:
@@ -72,9 +79,7 @@ class ActionScale(gym.core.Wrapper):
         orig_max = self.env.action_space.high
         new_min = np.array(new_min)
         new_max = np.array(new_max)
-        self._transform = lambda a: orig_min + (orig_max - orig_min) / (
-            new_max - new_min
-        ) * (a - new_min)
+        self._transform = lambda a: orig_min + (orig_max - orig_min) / (new_max - new_min) * (a - new_min)
         self.env.action_space.low = np.repeat([new_min], env.action_space.shape)
         self.env.action_space.high = np.repeat([new_max], env.action_space.shape)
 
@@ -103,7 +108,6 @@ class PyTorchObsWrapper(gym.ObservationWrapper):
     def observation(self, observation):
         observation = observation.transpose(2, 0, 1)
         return observation
-
 
 
 class ResizeWrapper(gym.ObservationWrapper):
@@ -141,7 +145,7 @@ class ResizeWrapper(gym.ObservationWrapper):
         )
 
 
-def make_env(seed=-1, name=None, action_repeat=None, w=84, h=84, render_every=None, **kwargs):
+def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, render_every=None, **kwargs):
     if "Duckietown" in name:
         import gym_duckietown
 
@@ -166,6 +170,7 @@ def make_env(seed=-1, name=None, action_repeat=None, w=84, h=84, render_every=No
     else:
         raise ValueError(f"Unknown environment name: {name}.")
     env = ActionScale(env, new_min=-1.0, new_max=1.0)
+    env = FrameStack(env, frame_stack)
     env = VideoWrapper(env, update_freq=render_every)
     env.seed(seed)
     return env

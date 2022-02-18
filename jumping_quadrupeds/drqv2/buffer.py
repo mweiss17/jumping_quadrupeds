@@ -2,10 +2,6 @@ import traceback
 import numpy as np
 from jumping_quadrupeds.buffer import ReplayBuffer
 
-def episode_len(episode):
-    # subtract -1 because the dummy first transition
-    return next(iter(episode.values())).shape[0] - 1
-
 
 class OffPolicyReplayBuffer(ReplayBuffer):
     def __init__(self, replay_dir=None, **kwargs):
@@ -20,12 +16,12 @@ class OffPolicyReplayBuffer(ReplayBuffer):
 
         self._samples_since_last_fetch += 1
         episode = self._sample_episode()
-        # add +1 for the first dummy transition
-        idx = np.random.randint(0, episode_len(episode) - self._nstep + 1) + 1
+
+        idx = np.random.randint(0, self.episode_len(episode) - self._nstep + 1)
 
         obs = episode["obs"][idx - 1]
         action = episode["act"][idx]
-        next_obs = episode["obs"][idx + self._nstep - 1]
+        next_obs = episode["obs"][idx - 1 + self._nstep]
         reward = np.zeros_like(episode["rew"][idx])
         discount = np.ones_like(episode["discount"][idx])
         for i in range(self._nstep):

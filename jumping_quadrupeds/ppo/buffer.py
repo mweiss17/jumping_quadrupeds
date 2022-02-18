@@ -4,11 +4,6 @@ from collections import defaultdict
 from torch.utils.data import IterableDataset
 
 
-def episode_len(episode):
-    # subtract -1 because the dummy first transition
-    return next(iter(episode.values())).shape[0] - 1
-
-
 class OnPolicyReplayBuffer(IterableDataset):
     def __init__(self, replay_dir, data_specs, max_size, gae_lambda, num_workers, discount, **kwargs):
         super().__init__()
