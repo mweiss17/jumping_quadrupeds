@@ -8,7 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional, Union
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
-from jumping_quadrupeds.buffer import ReplayBuffer
+from jumping_quadrupeds.buffer import ReplayBuffer, ReplayBufferStorage
 from jumping_quadrupeds.env import make_env
 from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, buffer_loader_factory
 from jumping_quadrupeds.ppo.agent import PPOAgent
@@ -53,6 +53,8 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
         replay_loader_kwargs = self.get("buffer/kwargs")
         replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
+        breakpoint()
+        self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
         self.replay_loader = buffer_loader_factory(**replay_loader_kwargs)
         self._replay_iter = None
 
@@ -131,6 +133,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     @property
     def episode_rets(self):
         ep_rets = list(dict(self.episode_returns).values())
+        print(f"{self.ep_idx}, {np.array(ep_rets[-1]).mean()}")
         ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
         return ep_rets
 
@@ -189,24 +192,23 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     def __call__(self):
         self._build()
         obs = self.env.reset()
-        self.replay_loader.dataset.add({"obs": np.array(obs)})
+        self.replay_storage.add({"obs": np.array(obs)})
 
         for _ in trange(self.get("total_steps")):
             action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
             next_obs, reward, done, misc = self.env.step(action)
             self.episode_returns[self.ep_idx].append(reward)
             self.next_step()
-            self.replay_loader.dataset.add(
-                {"obs": np.array(obs), "act": action, "rew": reward, "val": val, "logp": logp}
-            )
+            self.replay_storage.add({"obs": np.array(obs), "act": action, "rew": reward, "val": val, "logp": logp})
 
             if done or self.episode_timeout:
-                self.replay_loader.dataset.finish_episode()
+                print("saving episode")
+                self.replay_storage.finish_episode()
                 self.write_logs()
                 self.ep_idx += 1
                 self.save(is_best=self.checkpoint_best)
                 obs = self.env.reset()
-                self.replay_loader.dataset.add({"obs": np.array(obs)})
+                self.replay_storage.add({"obs": np.array(obs)})
 
             if self.update_now:
                 metrics = self.agent.update(self.replay_iter, self.step)

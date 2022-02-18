@@ -152,7 +152,6 @@ def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, ren
     if name.startswith("dm-"):
         domain, task = name[3:].split("_")
         camera_id = dict(quadruped=2).get(domain, 0)
-
         env = dmc2gym.make(
             domain,
             task,

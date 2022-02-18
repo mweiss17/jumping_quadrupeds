@@ -64,7 +64,6 @@ class DrQV2Agent:
         obs = torch.as_tensor(obs, device=self.device)
         obs = self.encoder(obs.unsqueeze(0))
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
-
         dist = self.actor(obs, stddev)
         if eval_mode:
             action = dist.mean
@@ -137,7 +136,6 @@ class DrQV2Agent:
         metrics = dict()
 
         obs, action, reward, discount, next_obs = to_torch(next(replay_iter).values(), self.device)
-        breakpoint()
 
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
@@ -151,6 +149,7 @@ class DrQV2Agent:
         with torch.no_grad():
             next_obs = self.encoder(next_obs)
         metrics["batch_reward"] = reward.mean().item()
+        metrics["action"] = action.detach().cpu().numpy()
 
         # update critic
         metrics.update(self.update_critic(obs, action, reward, discount, next_obs, step))

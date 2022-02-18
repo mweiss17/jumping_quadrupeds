@@ -23,6 +23,58 @@ def load_episode(fn):
         return episode
 
 
+class ReplayBufferStorage:
+    def __init__(self, data_specs, replay_dir):
+        self._data_specs = data_specs
+        self._replay_dir = replay_dir
+        replay_dir.mkdir(exist_ok=True)
+        self._current_episode = defaultdict(list)
+        self._preload()
+
+    def __len__(self):
+        return self._num_transitions
+
+    def add(self, step):
+        for spec in self._data_specs:
+            if spec.name == "discount":
+                value = 0.99
+            else:
+                value = step.get(spec.name, None)
+            if np.isscalar(value):
+                value = np.full(spec.shape, value, spec.dtype)
+            if value is None:
+                continue
+            assert spec.shape == value.shape and spec.dtype == value.dtype
+            self._current_episode[spec.name].append(value)
+
+    def _preload(self):
+        self._num_episodes = 0
+        self._num_transitions = 0
+        for fn in self._replay_dir.glob("*.npz"):
+            _, _, eps_len = fn.stem.split("_")
+            self._num_episodes += 1
+            self._num_transitions += int(eps_len)
+
+    def episode_len(self, episode):
+        # -1 for dummy transition (first is just an obs)
+        return next(iter(episode.values())).shape[0] - 1
+
+    def finish_episode(self):
+        episode = dict()
+        for spec in self._data_specs:
+            value = self._current_episode[spec.name]
+            episode[spec.name] = np.array(value, spec.dtype)
+        self._current_episode = defaultdict(list)
+        eps_idx = self._num_episodes
+        eps_len = self.episode_len(episode)
+        self._num_episodes += 1
+        self._num_transitions += eps_len
+        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
+        save_episode(episode, self._replay_dir / eps_fn)
+        print(f"saving to {self._replay_dir / eps_fn}")
+
+
 class ReplayBuffer(IterableDataset):
     def __init__(
         self,
@@ -47,48 +99,6 @@ class ReplayBuffer(IterableDataset):
         self._fetch_every = fetch_every
         self._samples_since_last_fetch = fetch_every
         self._save_snapshot = save_snapshot
-        self._replay_dir = replay_dir
-        self._replay_dir.mkdir(exist_ok=True)
-        self._current_episode = defaultdict(list)
-        self._preload()
-
-    def __len__(self):
-        return self._num_transitions
-
-    def add(self, step):
-        # we have to do this because we don't know the discount from dm_control, assume 1.0
-        if not step.get("discount"):
-            step["discount"] = self._discount
-        for spec in self._data_specs:
-            value = step.get(spec.name, None)
-            if np.isscalar(value):
-                value = np.full(spec.shape, value, spec.dtype)
-            if value is None:
-                continue
-            assert spec.shape == value.shape and spec.dtype == value.dtype
-            self._current_episode[spec.name].append(value)
-
-    def finish_episode(self):
-        episode = dict()
-        for spec in self._data_specs:
-            value = self._current_episode[spec.name]
-            episode[spec.name] = np.array(value, spec.dtype)
-        self._current_episode = defaultdict(list)
-        eps_idx = self._num_episodes
-        eps_len = self.episode_len(episode)
-        self._num_episodes += 1
-        self._num_transitions += eps_len
-        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-        eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
-        save_episode(episode, self._replay_dir / eps_fn)
-
-    def _preload(self):
-        self._num_episodes = 0
-        self._num_transitions = 0
-        for fn in self._replay_dir.glob("*.npz"):
-            _, _, eps_len = fn.stem.split("_")
-            self._num_episodes += 1
-            self._num_transitions += int(eps_len)
 
     def _sample_episode(self):
         try:
@@ -98,8 +108,10 @@ class ReplayBuffer(IterableDataset):
         return self._episodes[eps_fn]
 
     def _store_episode(self, eps_fn):
+        print(f"storing {eps_fn}")
         try:
             episode = load_episode(eps_fn)
+            print("loaded eps.")
         except:
             return False
         eps_len = self.episode_len(episode)
@@ -112,6 +124,7 @@ class ReplayBuffer(IterableDataset):
         self._episode_fns.sort()
         self._episodes[eps_fn] = episode
         self._size += eps_len
+        print(f"self._size: {self._size}")
 
         if not self._save_snapshot:
             eps_fn.unlink(missing_ok=True)

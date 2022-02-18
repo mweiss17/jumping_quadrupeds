@@ -16,7 +16,6 @@ class OffPolicyReplayBuffer(ReplayBuffer):
 
         self._samples_since_last_fetch += 1
         episode = self._sample_episode()
-
         idx = np.random.randint(0, self.episode_len(episode) - self._nstep + 1)
 
         obs = episode["obs"][idx - 1]
