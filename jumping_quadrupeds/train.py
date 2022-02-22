@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Union
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.buffer import ReplayBuffer, ReplayBufferStorage
-from jumping_quadrupeds.env import make_env
+from jumping_quadrupeds.env.env import make_env
 from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, buffer_loader_factory
 from jumping_quadrupeds.ppo.agent import PPOAgent
 from jumping_quadrupeds.drqv2.agent import DrQV2Agent
@@ -34,27 +34,28 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
         self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-        self.episode_returns = defaultdict(list)
         self.ep_idx = 0
+        self.episode_returns = []
 
         self._build_buffer()
         self._build_agent()
 
     def _build_buffer(self):
         data_specs = [
-            DataSpec("obs", self.env.observation_space.shape, np.uint8),
-            DataSpec("act", self.env.action_space.shape, np.float32),
-            DataSpec("rew", (1,), np.float32),
-            DataSpec("val", (1,), np.float32),
+            DataSpec("observation", self.env.observation_space.shape, np.uint8),
+            DataSpec("action", self.env.action_space.shape, np.float32),
+            DataSpec("reward", (1,), np.float32),
             DataSpec("discount", (1,), np.float32),
-            DataSpec("logp", self.env.action_space.shape, np.float32),
         ]
+        if self.get("buffer/kwargs/type") == "on-policy":
+            data_specs.extend(
+                [DataSpec("value", (1,), np.float32), DataSpec("logp", self.env.action_space.shape, np.float32)]
+            )
 
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
         replay_loader_kwargs = self.get("buffer/kwargs")
-        replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
-        breakpoint()
         self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
+        replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
         self.replay_loader = buffer_loader_factory(**replay_loader_kwargs)
         self._replay_iter = None
 
@@ -113,47 +114,37 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         return False
 
     @property
-    def episode_timeout(self):
-        return len(self.episode_returns[self.ep_idx]) == self.get("env/kwargs/max_ep_len")
+    def global_frame(self):
+        return self.step * self.get("env/kwargs/action_repeat")
 
     @property
     def update_now(self):
-        update_every = self.step % self.get("agent/kwargs/update_every_steps") == 0 and self.step > 0
-        gt_seed_frames = self.step > self.get("agent/kwargs/num_seed_frames")
-        ep_len_gt_nstep = len(self.episode_returns[self.ep_idx]) >= (self.get("buffer/kwargs/nstep", 0) + 1)
-        return update_every and gt_seed_frames and ep_len_gt_nstep
+        if self.step <= 0:
+            return False
+        update_every = (self.step % self.get("agent/kwargs/update_every_steps")) == 0
+        gt_seed_frames = self.global_frame > self.get("agent/kwargs/num_seed_frames")
+        ep_len_gt_nstep = len(self.replay_storage._current_episode["obs"]) >= (self.get("buffer/kwargs/nstep", 0) + 1)
+        return update_every and gt_seed_frames  # and ep_len_gt_nstep
 
     @property
     def checkpoint_best(self):
-        if self.mean_return > self.read_from_cache("best_ep_mean_return", -10000.0):
-            self.write_to_cache("best_ep_mean_return", self.mean_return)
+
+        if self.episode_returns[-1] > self.read_from_cache("best_episode_return", -10000.0):
+            self.write_to_cache("best_episode_return", self.episode_returns[-1])
             return True
         return False
 
-    @property
-    def episode_rets(self):
-        ep_rets = list(dict(self.episode_returns).values())
-        print(f"{self.ep_idx}, {np.array(ep_rets[-1]).mean()}")
-        ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
-        return ep_rets
-
-    @property
-    def mean_return(self):
-        return np.mean(self.episode_rets.sum(axis=1))
-
-    def write_logs(self):
-        ep_rets = list(dict(self.episode_returns).values())
-        ep_rets = np.array([xi + [0] * (self.get("env/kwargs/max_ep_len") - len(xi)) for xi in ep_rets])
-        full_episodic_return = ep_rets.sum(axis=1)
+    def write_logs(self, episode_reward):
         if self.get("use_wandb"):
+            self.ep_idx += 1
+            self.episode_returns.append(episode_reward)
             self.wandb_log(
                 **{
-                    "Episode mean reward": np.mean(full_episodic_return),
-                    "Episode return": full_episodic_return[-1],
-                    "Episode mean length": np.mean([len(ep) for ep in self.episode_returns.values()]),
-                    "Number of Episodes": len(self.episode_returns),
+                    "Episode return": episode_reward,
+                    "Number of Episodes": self.ep_idx,
                 }
             )
+
             self.env.send_wandb_video()
 
     def compute_env_specific_metrics(self, metrics):
@@ -191,36 +182,35 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     @register_default_dispatch
     def __call__(self):
         self._build()
-        obs = self.env.reset()
-        self.replay_storage.add({"obs": np.array(obs)})
+        time_step = self.env.reset()
+        self.replay_storage.add(time_step)
+        episode_reward = 0
 
         for _ in trange(self.get("total_steps")):
-            action, val, logp = self.agent.act(preprocess_obs(obs, self.device), self.step, eval_mode=False)
-            next_obs, reward, done, misc = self.env.step(action)
-            self.episode_returns[self.ep_idx].append(reward)
+            action, val, logp = self.agent.act(
+                preprocess_obs(time_step.observation, self.device), self.step, eval_mode=False
+            )
+            time_step = self.env.step(action)
             self.next_step()
-            self.replay_storage.add({"obs": np.array(obs), "act": action, "rew": reward, "val": val, "logp": logp})
-
-            if done or self.episode_timeout:
-                print("saving episode")
-                self.replay_storage.finish_episode()
-                self.write_logs()
-                self.ep_idx += 1
+            self.replay_storage.add(time_step)
+            if time_step.last():
+                self.write_logs(episode_reward)
+                episode_reward = 0
                 self.save(is_best=self.checkpoint_best)
-                obs = self.env.reset()
-                self.replay_storage.add({"obs": np.array(obs)})
+                time_step = self.env.reset()
+                self.replay_storage.add(time_step)
 
             if self.update_now:
                 metrics = self.agent.update(self.replay_iter, self.step)
+
                 metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
                     self.wandb_log(**metrics)
 
-            # Update obs (critical!)
-            obs = next_obs
             if self.checkpoint_now:
                 self.save(checkpoint_path=self.checkpoint_path)
                 self.save(is_latest=True)
+            episode_reward += time_step.reward
 
 
 if __name__ == "__main__":

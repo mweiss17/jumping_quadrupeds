@@ -5,29 +5,24 @@ from torch.utils.data import IterableDataset
 
 
 class OnPolicyReplayBuffer(IterableDataset):
-    def __init__(self, replay_dir, data_specs, max_size, gae_lambda, num_workers, discount, **kwargs):
+    def __init__(self, replay_dir, data_specs, max_size, gae_lambda, discount, **kwargs):
         super().__init__()
-        self._gae_lambda = gae_lambda
-        self.eps_idx = 0
-        self.step_idx = 0
-        self.total_idx = 0
-        self._data_specs = data_specs
-        self._buffer = defaultdict(list)
         self._replay_dir = replay_dir
-        self._size = 0
+        self._data_specs = data_specs
         self._max_size = max_size
-        self._num_workers = max(1, num_workers)
-        self._max_size_per_worker = max_size // self._num_workers
+        self._gae_lambda = gae_lambda
         self._discount = discount
+        self._buffer = defaultdict(list)
         self.ptr, self.path_start_idx = 0, 0
 
-    def add(self, transition):
+    def add(self, time_step):
         """
         Append one timestep of agent-environment interaction to the buffer.
         """
         # buffer has to have room so you can store
 
         assert self.ptr < self._max_size
+        breakpoint()
         if not transition.get("discount"):
             transition["discount"] = self._discount
         for spec in self._data_specs:
@@ -37,6 +32,8 @@ class OnPolicyReplayBuffer(IterableDataset):
             assert spec.shape == value.shape and spec.dtype == value.dtype
             self._buffer[spec.name].append(value)
         self.ptr += 1
+        if time_step.last():
+            self.finish_episode()
 
     def finish_episode(self):
         """

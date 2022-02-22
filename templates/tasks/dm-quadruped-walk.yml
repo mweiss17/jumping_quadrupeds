@@ -1,8 +1,7 @@
 env:
   kwargs:
     name: dm-quadruped_walk
-    max_ep_len: 1000 # (int): Maximum length of trajectory / episode / rollout. This is only used by some variable-length
-    render_every: 25 # (int): Frequency at which to create a video of a rollout.
+    render_every: 2 # (int): Frequency at which to create a video of a rollout.
     action_repeat: 2
     frame_stack: 3
 
@@ -13,7 +12,7 @@ agent:
     critic_lr: 1e-4 # null
     critic_target_tau: 0.01 # 0.01 default
     num_expl_steps: 2000
-    num_seed_frames: 8000
+    num_seed_frames: 4000
     hidden_dim: 1024
     feature_dim: 50
     stddev_clip: 0.3
@@ -33,7 +32,7 @@ buffer:
     max_size:  1000000
     nstep: 3
     batch_size: 256
-    fetch_every: 500
-    num_workers: 8
+    fetch_every: 1000
+    num_workers: 4
     save_snapshot: True
     discount: 0.99

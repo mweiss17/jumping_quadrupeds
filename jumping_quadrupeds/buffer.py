@@ -34,18 +34,20 @@ class ReplayBufferStorage:
     def __len__(self):
         return self._num_transitions
 
-    def add(self, step):
+    def add(self, time_step):
         for spec in self._data_specs:
-            if spec.name == "discount":
-                value = 0.99
-            else:
-                value = step.get(spec.name, None)
+            value = time_step[spec.name]
             if np.isscalar(value):
                 value = np.full(spec.shape, value, spec.dtype)
-            if value is None:
-                continue
             assert spec.shape == value.shape and spec.dtype == value.dtype
             self._current_episode[spec.name].append(value)
+        if time_step.last():
+            episode = dict()
+            for spec in self._data_specs:
+                value = self._current_episode[spec.name]
+                episode[spec.name] = np.array(value, spec.dtype)
+            self._current_episode = defaultdict(list)
+            self._store_episode(episode)
 
     def _preload(self):
         self._num_episodes = 0
@@ -59,12 +61,7 @@ class ReplayBufferStorage:
         # -1 for dummy transition (first is just an obs)
         return next(iter(episode.values())).shape[0] - 1
 
-    def finish_episode(self):
-        episode = dict()
-        for spec in self._data_specs:
-            value = self._current_episode[spec.name]
-            episode[spec.name] = np.array(value, spec.dtype)
-        self._current_episode = defaultdict(list)
+    def _store_episode(self, episode):
         eps_idx = self._num_episodes
         eps_len = self.episode_len(episode)
         self._num_episodes += 1
@@ -72,7 +69,6 @@ class ReplayBufferStorage:
         ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
         eps_fn = f"{ts}_{eps_idx}_{eps_len}.npz"
         save_episode(episode, self._replay_dir / eps_fn)
-        print(f"saving to {self._replay_dir / eps_fn}")
 
 
 class ReplayBuffer(IterableDataset):

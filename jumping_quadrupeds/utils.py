@@ -5,6 +5,7 @@ import torch
 import argparse
 import numpy as np
 import torch.nn as nn
+from typing import TypeVar, Generic, Iterable, Iterator, Sequence, List, Optional, Tuple
 from torchvision.transforms import transforms
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
@@ -12,37 +13,27 @@ from collections import defaultdict, namedtuple
 from jumping_quadrupeds.ppo.buffer import OnPolicyReplayBuffer
 from jumping_quadrupeds.drqv2.buffer import OffPolicyReplayBuffer
 from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
+from torch.utils.data import IterableDataset
+
+T_co = TypeVar("T_co", covariant=True)
+
 
 DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
 ### FILE ADAPTED FROM OPENAI SPINNINGUP, https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo
 
 
 def schedule(schdl, step, log_std):
-    try:
-        return float(schdl)
-    except (ValueError, TypeError):
-        schdl = list(schdl.values())
-        schdl = f"{schdl[0]}({float(schdl[1])}, {float(schdl[2])}, {int(schdl[3])})"
+    schdl = list(schdl.values())
+    schdl = f"{schdl[0]}({float(schdl[1])}, {float(schdl[2])}, {int(schdl[3])})"
 
-        match = re.match(r"linear\((.+),(.+),(.+)\)", schdl)
-        if match:
-            init, final, duration = [float(g) for g in match.groups()]
-            mix = np.clip(step / duration, 0.0, 1.0)
-            if step > duration and log_std is not None:
-                return None
+    match = re.match(r"linear\((.+),(.+),(.+)\)", schdl)
+    if match:
+        init, final, duration = [float(g) for g in match.groups()]
+        mix = np.clip(step / duration, 0.0, 1.0)
+        if step > duration and log_std is not None:
+            return None
 
-            return (1.0 - mix) * init + mix * final, duration
-        match = re.match(r"step_linear\((.+),(.+),(.+),(.+),(.+)\)", schdl)
-        if match:
-            init, final1, duration1, final2, duration2 = [float(g) for g in match.groups()]
-
-            if step <= duration1:
-                mix = np.clip(step / duration1, 0.0, 1.0)
-                return (1.0 - mix) * init + mix * final1, duration
-            else:
-                mix = np.clip((step - duration1) / duration2, 0.0, 1.0)
-                return (1.0 - mix) * final1 + mix * final2, duration
-    raise NotImplementedError(schdl)
+        return (1.0 - mix) * init + mix * final, duration
 
 
 def weight_init(m):
@@ -129,7 +120,7 @@ def preprocess_obs(obs, device):
     if obs.dtype == np.uint8:
         obs = torch.tensor(np.array(obs), dtype=torch.float32)
     obs = obs.to(device)
-    obs = obs / 255.0
+    obs = obs / 255.0 - 0.5
     return obs
 
 
@@ -137,6 +128,55 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.random.manual_seed(seed)
     return seed
+
+
+class BufferedShuffleDataset(IterableDataset[T_co]):
+    r"""Dataset shuffled from the original dataset.
+    This class is useful to shuffle an existing instance of an IterableDataset.
+    The buffer with `buffer_size` is filled with the items from the dataset first. Then,
+    each item will be yielded from the buffer by reservoir sampling via iterator.
+    `buffer_size` is required to be larger than 0. For `buffer_size == 1`, the
+    dataset is not shuffled. In order to fully shuffle the whole dataset, `buffer_size`
+    is required to be greater than or equal to the size of dataset.
+    When it is used with :class:`~torch.utils.data.DataLoader`, each item in the
+    dataset will be yielded from the :class:`~torch.utils.data.DataLoader` iterator.
+    And, the method to set up a random seed is different based on :attr:`num_workers`.
+    For single-process mode (:attr:`num_workers == 0`), the random seed is required to
+    be set before the :class:`~torch.utils.data.DataLoader` in the main process.
+        >>> ds = BufferedShuffleDataset(dataset)
+        >>> random.seed(...)
+        >>> print(list(torch.utils.data.DataLoader(ds, num_workers=0)))
+    For multi-process mode (:attr:`num_workers > 0`), the random seed is set by a callable
+    function in each worker.
+        >>> ds = BufferedShuffleDataset(dataset)
+        >>> def init_fn(worker_id):
+        ...     random.seed(...)
+        >>> print(list(torch.utils.data.DataLoader(ds, ..., num_workers=n, worker_init_fn=init_fn)))
+    Arguments:
+        dataset (IterableDataset): The original IterableDataset.
+        buffer_size (int): The buffer size for shuffling.
+    """
+    dataset: IterableDataset[T_co]
+    buffer_size: int
+
+    def __init__(self, dataset: IterableDataset[T_co], buffer_size: int) -> None:
+        super(BufferedShuffleDataset, self).__init__()
+        assert buffer_size > 0, "buffer_size should be larger than 0"
+        self.dataset = dataset
+        self.buffer_size = buffer_size
+
+    def __iter__(self) -> Iterator[T_co]:
+        buf: List[T_co] = []
+        for x in self.dataset:
+            if len(buf) == self.buffer_size:
+                idx = random.randint(0, self.buffer_size - 1)
+                yield buf[idx]
+                buf[idx] = x
+            else:
+                buf.append(x)
+        random.shuffle(buf)
+        while buf:
+            yield buf.pop()
 
 
 def buffer_loader_factory(type=None, batch_size=None, **kwargs):
@@ -155,6 +195,9 @@ def buffer_loader_factory(type=None, batch_size=None, **kwargs):
         raise ValueError(
             f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
         )
+    breakpoint()
+
+    buffer = BufferedShuffleDataset(buffer, buffer_size=batch_size * kwargs.get("num_workers"))
 
     loader = torch.utils.data.DataLoader(
         buffer,

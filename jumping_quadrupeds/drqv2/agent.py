@@ -2,6 +2,7 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import time
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -78,7 +79,6 @@ class DrQV2Agent:
 
     def update_critic(self, obs, action, reward, discount, next_obs, step):
         metrics = dict()
-
         with torch.no_grad():
             stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
             dist = self.actor(next_obs, stddev)
@@ -88,6 +88,7 @@ class DrQV2Agent:
             target_Q = reward + (discount * target_V)
 
         Q1, Q2 = self.critic(obs, action)
+
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
         metrics["critic_target_q"] = target_Q.mean().item()
@@ -134,9 +135,7 @@ class DrQV2Agent:
 
     def update(self, replay_iter, step):
         metrics = dict()
-
-        obs, action, reward, discount, next_obs = to_torch(next(replay_iter).values(), self.device)
-
+        obs, action, reward, discount, next_obs = to_torch(next(replay_iter), self.device)
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
 
@@ -148,8 +147,9 @@ class DrQV2Agent:
         obs = self.encoder(obs)
         with torch.no_grad():
             next_obs = self.encoder(next_obs)
+
         metrics["batch_reward"] = reward.mean().item()
-        metrics["action"] = action.detach().cpu().numpy()
+        # metrics["action"] = action.detach().cpu().numpy()
 
         # update critic
         metrics.update(self.update_critic(obs, action, reward, discount, next_obs, step))
