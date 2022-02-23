@@ -11,7 +11,7 @@ from collections import deque
 from einops import rearrange
 from typing import Any, NamedTuple
 
-from jumping_quadrupeds.envs.frame_stack import FrameStack
+from jumping_quadrupeds.frame_stack import FrameStack
 
 try:
     import dm_control
