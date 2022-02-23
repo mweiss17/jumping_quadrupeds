@@ -5,35 +5,44 @@ from torch.utils.data import IterableDataset
 
 
 class OnPolicyReplayBuffer(IterableDataset):
-    def __init__(self, replay_dir, data_specs, max_size, gae_lambda, discount, **kwargs):
+    def __init__(self, replay_dir, data_specs, gae_lambda, discount, **kwargs):
         super().__init__()
         self._replay_dir = replay_dir
         self._data_specs = data_specs
-        self._max_size = max_size
         self._gae_lambda = gae_lambda
         self._discount = discount
         self._buffer = defaultdict(list)
         self.ptr, self.path_start_idx = 0, 0
 
-    def add(self, time_step):
+    def add(self, time_step, val=None, logp=None):
         """
         Append one timestep of agent-environment interaction to the buffer.
         """
         # buffer has to have room so you can store
-
-        assert self.ptr < self._max_size
-        breakpoint()
-        if not transition.get("discount"):
-            transition["discount"] = self._discount
         for spec in self._data_specs:
-            value = transition[spec.name]
+            value = time_step[spec.name]
             if np.isscalar(value):
                 value = np.full(spec.shape, value, spec.dtype)
             assert spec.shape == value.shape and spec.dtype == value.dtype
+            if time_step.first() and spec.name != "observation":
+                continue
+            if time_step.last() and spec.name == "observation":
+                continue
             self._buffer[spec.name].append(value)
-        self.ptr += 1
+        if val is not None:
+            self._buffer["val"].append(val)
+        if logp is not None:
+            self._buffer["logp"].append(logp)
+
+        if not time_step.first():
+            self.ptr += 1
+
         if time_step.last():
             self.finish_episode()
+
+    @property
+    def cur_ep_len(self):
+        return self.ptr - self.path_start_idx
 
     def finish_episode(self):
         """
@@ -53,11 +62,10 @@ class OnPolicyReplayBuffer(IterableDataset):
         if self.path_start_idx == self.ptr:
             return
         last_val = 0.0
-        rews = np.stack(self._buffer["rew"], axis=1).flatten()[path_slice]
+        rews = np.stack(self._buffer["reward"], axis=1).flatten()[path_slice]
         rews = np.append(rews, last_val)
         vals = np.stack(self._buffer["val"], axis=1).flatten()[path_slice]
         vals = np.append(vals, last_val)
-
         # the next two lines implement GAE-Lambda advantage calculation
         deltas = rews[:-1] + self._discount * vals[1:] - vals[:-1]
         self._buffer["adv"].extend(discount_cumsum(deltas, self._discount * self._gae_lambda))
@@ -68,13 +76,13 @@ class OnPolicyReplayBuffer(IterableDataset):
         self.path_start_idx = self.ptr
 
     def get_obs_dict(self):
-        data = dict(
-            obs=np.array(self._buffer["obs"]),
-            act=np.array(self._buffer["act"]),
-            rew=np.array(self._buffer["rew"]),
-            ret=np.array(self._buffer["ret"]),
-            adv=np.array(self._buffer["adv"]),
-            logp=np.array(self._buffer["logp"]),
+        data = (
+            np.array(self._buffer["observation"]),
+            np.array(self._buffer["action"]),
+            np.array(self._buffer["reward"]),
+            np.array(self._buffer["ret"]),
+            np.array(self._buffer["adv"]),
+            np.array(self._buffer["logp"]),
         )
         return data
 
@@ -84,7 +92,6 @@ class OnPolicyReplayBuffer(IterableDataset):
         the buffer, with advantages appropriately normalized (shifted to have
         mean zero and std one). Also, resets some pointers in the buffer.
         """
-        assert self.ptr == self._max_size  # buffer has to be full before you can get
         self.finish_episode()
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = np.mean(self._buffer["adv"]), np.std(self._buffer["adv"])

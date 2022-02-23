@@ -11,9 +11,9 @@ agent:
     rew_smooth_len: 10 # (int): rewards are accumulated in a ring buffer and this determines the size
     conv_ac_hidden_scaling: 36 # 36 if 3x84x84 elif obs_shape is 3x64x64 then 16
     shared_encoder: False
-    log_std: 0.3
+    log_std: 0.5
     freeze_encoder: False
-    update_every_steps: 4000
+    update_every_steps: 2000
     num_seed_frames: 0
 
 
@@ -21,11 +21,9 @@ agent:
 buffer:
   kwargs:
     type: "on-policy"
-    max_size:  4000
     batch_size: null
-    fetch_every: 4000
-    num_workers: 0
-    save_snapshot: True
+    num_workers: 0 # only works with 0 workers
+    save_snapshot: False
     discount: 0.99
     gae_lambda: 0.97
 

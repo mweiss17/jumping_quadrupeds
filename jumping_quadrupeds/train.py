@@ -47,16 +47,15 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             DataSpec("reward", (1,), np.float32),
             DataSpec("discount", (1,), np.float32),
         ]
-        if self.get("buffer/kwargs/type") == "on-policy":
-            data_specs.extend(
-                [DataSpec("value", (1,), np.float32), DataSpec("logp", self.env.action_space.shape, np.float32)]
-            )
 
         replay_dir = Path(self.experiment_directory + "/Logs/buffer")
         replay_loader_kwargs = self.get("buffer/kwargs")
-        self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
         replay_loader_kwargs.update({"replay_dir": replay_dir, "data_specs": data_specs})
         self.replay_loader = buffer_loader_factory(**replay_loader_kwargs)
+        if self.get("buffer/kwargs/type") == "on-policy":
+            self.replay_storage = self.replay_loader.dataset
+        else:
+            self.replay_storage = ReplayBufferStorage(data_specs, replay_dir)
         self._replay_iter = None
 
     @property
@@ -123,12 +122,11 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             return False
         update_every = (self.step % self.get("agent/kwargs/update_every_steps")) == 0
         gt_seed_frames = self.global_frame > self.get("agent/kwargs/num_seed_frames")
-        ep_len_gt_nstep = len(self.replay_storage._current_episode["obs"]) >= (self.get("buffer/kwargs/nstep", 0) + 1)
-        return update_every and gt_seed_frames  # and ep_len_gt_nstep
+        ep_len_gt_nstep = self.replay_storage.cur_ep_len >= self.get("buffer/kwargs/nstep", 0)
+        return update_every and gt_seed_frames and ep_len_gt_nstep
 
     @property
     def checkpoint_best(self):
-
         if self.episode_returns[-1] > self.read_from_cache("best_episode_return", -10000.0):
             self.write_to_cache("best_episode_return", self.episode_returns[-1])
             return True
@@ -187,22 +185,14 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         episode_reward = 0
 
         for _ in trange(self.get("total_steps")):
-            action, val, logp = self.agent.act(
-                preprocess_obs(time_step.observation, self.device), self.step, eval_mode=False
-            )
+            obs = preprocess_obs(time_step.observation, self.device)
+            action, val, logp = self.agent.act(obs, self.step, eval_mode=False)
             time_step = self.env.step(action)
             self.next_step()
-            self.replay_storage.add(time_step)
-            if time_step.last():
-                self.write_logs(episode_reward)
-                episode_reward = 0
-                self.save(is_best=self.checkpoint_best)
-                time_step = self.env.reset()
-                self.replay_storage.add(time_step)
+            self.replay_storage.add(time_step, val, logp)
 
             if self.update_now:
                 metrics = self.agent.update(self.replay_iter, self.step)
-
                 metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
                     self.wandb_log(**metrics)
@@ -210,6 +200,14 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             if self.checkpoint_now:
                 self.save(checkpoint_path=self.checkpoint_path)
                 self.save(is_latest=True)
+
+            if time_step.last():
+                self.write_logs(episode_reward)
+                episode_reward = 0
+                self.save(is_best=self.checkpoint_best)
+                time_step = self.env.reset()
+                self.replay_storage.add(time_step)
+
             episode_reward += time_step.reward
 
 

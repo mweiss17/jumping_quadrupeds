@@ -78,7 +78,6 @@ class PPOAgent:
     def compute_loss_pi(self, obs, act, adv, logp_old):
         """Computes policy loss"""
         obs = preprocess_obs(obs, self.device)
-
         # Policy loss
         pi, logp = self.ac.pi(obs, act)
         adv = adv.unsqueeze(1)
@@ -110,10 +109,9 @@ class PPOAgent:
     def update(self, replay_loader, step):
         """Updates the policy and value function based on the latest replay buffer"""
         metrics = {}
-        obs, action, rew, ret, adv, logp = to_torch(next(replay_loader).values(), self.device)
 
+        obs, action, rew, ret, adv, logp = to_torch(next(replay_loader), self.device)
         self.ac.train()
-
         for i in range(self.train_pi_iters):
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(obs, action, adv, logp)
@@ -150,6 +148,7 @@ class PPOAgent:
                 "adv-std": adv_std,
                 "ratio-mean": ratio_mean,
                 "ratio-std": ratio_std,
+                "action": action.detach().cpu().numpy(),
             }
         )
         return metrics

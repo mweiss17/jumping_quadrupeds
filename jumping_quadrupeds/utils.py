@@ -187,17 +187,20 @@ def buffer_loader_factory(type=None, batch_size=None, **kwargs):
 
     if type == "on-policy":
         buffer = OnPolicyReplayBuffer(**kwargs)
+        buffer_size = batch_size
     elif type == "off-policy":
         buffer = OffPolicyReplayBuffer(**kwargs)
+        buffer_size = batch_size * kwargs.get("num_workers")
     elif type == "off-policy-sequential":
         buffer = OffPolicySequentialReplayBuffer(**kwargs)
+        buffer_size = batch_size * kwargs.get("num_workers")
+
     else:
         raise ValueError(
             f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
         )
-    breakpoint()
-
-    buffer = BufferedShuffleDataset(buffer, buffer_size=batch_size * kwargs.get("num_workers"))
+    if type == "off-policy":
+        buffer = BufferedShuffleDataset(buffer, buffer_size=buffer_size)
 
     loader = torch.utils.data.DataLoader(
         buffer,
