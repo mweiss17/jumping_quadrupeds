@@ -31,10 +31,11 @@ class ReplayBufferStorage:
         self._current_episode = defaultdict(list)
         self._preload()
 
-    def __len__(self):
+    @property
+    def cur_ep_len(self):
         return self._num_transitions
 
-    def add(self, time_step):
+    def add(self, time_step, val=None, logp=None):
         for spec in self._data_specs:
             value = time_step[spec.name]
             if np.isscalar(value):

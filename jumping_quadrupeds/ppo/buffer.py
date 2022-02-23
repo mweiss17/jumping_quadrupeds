@@ -36,7 +36,6 @@ class OnPolicyReplayBuffer(IterableDataset):
 
         if not time_step.first():
             self.ptr += 1
-
         if time_step.last():
             self.finish_episode()
 
@@ -76,8 +75,9 @@ class OnPolicyReplayBuffer(IterableDataset):
         self.path_start_idx = self.ptr
 
     def get_obs_dict(self):
+        end = len(self._buffer["action"])
         data = (
-            np.array(self._buffer["observation"]),
+            np.array(self._buffer["observation"])[:end],
             np.array(self._buffer["action"]),
             np.array(self._buffer["reward"]),
             np.array(self._buffer["ret"]),

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Union
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from jumping_quadrupeds.buffer import ReplayBuffer, ReplayBufferStorage
-from jumping_quadrupeds.env.env import make_env
+from jumping_quadrupeds.envs.env import make_env
 from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, buffer_loader_factory
 from jumping_quadrupeds.ppo.agent import PPOAgent
 from jumping_quadrupeds.drqv2.agent import DrQV2Agent
