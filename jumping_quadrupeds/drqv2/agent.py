@@ -2,12 +2,14 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import time
 import torch
 import torch.nn.functional as F
 import numpy as np
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
 from jumping_quadrupeds.augs import RandomShiftsAug
+
 
 class DrQV2Agent:
     def __init__(
@@ -25,7 +27,7 @@ class DrQV2Agent:
         stddev_schedule,
         stddev_clip,
         log_std_init,
-        **kwargs
+        **kwargs,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -36,16 +38,10 @@ class DrQV2Agent:
         self.log_std_init = log_std_init
         # models
         self.encoder = Encoder(obs_space).to(device)
-        self.actor = Actor(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init
-        ).to(device)
+        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
 
-        self.critic = Critic(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
-        ).to(device)
-        self.critic_target = Critic(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
-        ).to(device)
+        self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
@@ -69,7 +65,6 @@ class DrQV2Agent:
         obs = torch.as_tensor(obs, device=self.device)
         obs = self.encoder(obs.unsqueeze(0))
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
-
         dist = self.actor(obs, stddev)
         if eval_mode:
             action = dist.mean
@@ -77,14 +72,13 @@ class DrQV2Agent:
             action = dist.sample(clip=None)
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
-        value = np.array([0.], dtype=np.float32)
+        value = np.array([0.0], dtype=np.float32)
         log_p = dist.log_prob(action).detach().cpu().numpy()[0]
         action = action.detach().cpu().numpy()[0]
         return action, value, log_p
 
     def update_critic(self, obs, action, reward, discount, next_obs, step):
         metrics = dict()
-
         with torch.no_grad():
             stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
             dist = self.actor(next_obs, stddev)
@@ -94,13 +88,16 @@ class DrQV2Agent:
             target_Q = reward + (discount * target_V)
 
         Q1, Q2 = self.critic(obs, action)
+
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
         metrics["critic_target_q"] = target_Q.mean().item()
         metrics["critic_q1"] = Q1.mean().item()
         metrics["critic_q2"] = Q2.mean().item()
         metrics["critic_loss"] = critic_loss.item()
-        metrics["action_noise_std_dev"] = stddev.item() if stddev is not None else self.actor.log_std.detach().cpu().numpy()
+        metrics["action_noise_std_dev"] = (
+            stddev.item() if stddev is not None else self.actor.log_std.detach().cpu().numpy()
+        )
 
         # optimize encoder and critic
         self.encoder_opt.zero_grad(set_to_none=True)
@@ -138,9 +135,7 @@ class DrQV2Agent:
 
     def update(self, replay_iter, step):
         metrics = dict()
-
-        obs, action, reward, discount, next_obs = to_torch(next(replay_iter).values(), self.device)
-
+        obs, action, reward, discount, next_obs = to_torch(next(replay_iter), self.device)
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
 
@@ -154,11 +149,10 @@ class DrQV2Agent:
             next_obs = self.encoder(next_obs)
 
         metrics["batch_reward"] = reward.mean().item()
+        # metrics["action"] = action.detach().cpu().numpy()
 
         # update critic
-        metrics.update(
-            self.update_critic(obs, action, reward, discount, next_obs, step)
-        )
+        metrics.update(self.update_critic(obs, action, reward, discount, next_obs, step))
 
         # update actor
         metrics.update(self.update_actor(obs.detach(), step))
@@ -169,23 +163,24 @@ class DrQV2Agent:
         return metrics
 
     def save_checkpoint(self, path):
-        checkpoint = {'actor': self.actor.state_dict(),
-                      'critic': self.critic.state_dict(),
-                      'critic_target': self.critic_target.state_dict(),
-                      'encoder': self.encoder.state_dict(),
-                      'encoder_opt': self.encoder_opt.state_dict(),
-                      'actor_opt': self.actor_opt.state_dict(),
-                      'critic_opt': self.critic_opt.state_dict(),
-                      }
+        checkpoint = {
+            "actor": self.actor.state_dict(),
+            "critic": self.critic.state_dict(),
+            "critic_target": self.critic_target.state_dict(),
+            "encoder": self.encoder.state_dict(),
+            "encoder_opt": self.encoder_opt.state_dict(),
+            "actor_opt": self.actor_opt.state_dict(),
+            "critic_opt": self.critic_opt.state_dict(),
+        }
         torch.save(checkpoint, path)
 
     def load_checkpoint(self, path):
         print(f"loading checkpoint from: {path}")
         checkpoint = torch.load(path)
-        self.actor.load_state_dict(checkpoint['actor'])
-        self.critic.load_state_dict(checkpoint['critic'])
-        self.critic_target.load_state_dict(checkpoint['critic_target'])
-        self.encoder.load_state_dict(checkpoint['encoder'])
-        self.encoder_opt.load_state_dict(checkpoint['encoder_opt'])
-        self.actor_opt.load_state_dict(checkpoint['actor_opt'])
-        self.critic_opt.load_state_dict(checkpoint['critic_opt'])
+        self.actor.load_state_dict(checkpoint["actor"])
+        self.critic.load_state_dict(checkpoint["critic"])
+        self.critic_target.load_state_dict(checkpoint["critic_target"])
+        self.encoder.load_state_dict(checkpoint["encoder"])
+        self.encoder_opt.load_state_dict(checkpoint["encoder_opt"])
+        self.actor_opt.load_state_dict(checkpoint["actor_opt"])
+        self.critic_opt.load_state_dict(checkpoint["critic_opt"])

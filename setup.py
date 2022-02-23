@@ -12,7 +12,7 @@ setup(
     url="",
     install_requires=[
         "torch>=1.8",
-        'opencv-python',
+        "opencv-python",
         "tqdm",
         "attrs",
         "pillow",
@@ -35,12 +35,11 @@ setup(
     ],
     extras_require={
         "dmc": [
-            "dm_control @ git+git://github.com/deepmind/dm_control.git",
+            # "dm_control @ git+git://github.com/deepmind/dm_control.git",
             "dmc2gym @  git+git://github.com/denisyarats/dmc2gym.git",
             "mujoco_py",
+            "dm-env",
         ],
-        "meta": [
-            "torchmeta"
-        ]
+        "meta": ["torchmeta"],
     },
 )

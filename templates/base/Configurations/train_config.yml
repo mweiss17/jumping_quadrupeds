@@ -3,9 +3,9 @@
 env:
   kwargs:
     name: gym-CarRacing-v0 # gym-CarRacingManualConeObstacles-v0 #  gym-CarRacingCone-v0  # (str): Environment name, used for logging. options include "gym-Duckietown-small_loop-v0" #CarRacing-v0 # dm-quadruped_walk
-    max_ep_len: 1000 # (int): Maximum length of trajectory / episode / rollout. This is only used by some variable-length
     render_every: 25 # (int): Frequency at which to create a video of a rollout.
     action_repeat: 1
+    frame_stack: 1
 
 ### Experimental ###
 use_wandb: True

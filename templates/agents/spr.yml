@@ -26,7 +26,7 @@ agent:
 ### Sequential Off-Policy Buffer Configuration ###
 buffer:
   kwargs:
-    name: "off-policy-sequential"
+    type: "off-policy-sequential"
     max_size:  1000000
     batch_size: 128
     fetch_every: 1000

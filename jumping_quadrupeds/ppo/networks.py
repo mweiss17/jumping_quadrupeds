@@ -101,9 +101,7 @@ class ConvActorCritic(AbstractActorCritic):
         channels = observation_space.shape[0]
 
         actor_encoder = WorldModelsConvEncoder(channels)
-        critic_encoder = (
-            actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
-        )
+        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space,
@@ -128,7 +126,6 @@ class ConvActorCritic(AbstractActorCritic):
             param.requires_grad = False
 
     def step(self, obs, eval_mode=False):
-
         with torch.no_grad():
             if len(obs.shape) == 3:
                 obs = obs.unsqueeze(0)

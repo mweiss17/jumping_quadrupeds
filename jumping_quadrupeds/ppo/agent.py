@@ -7,6 +7,7 @@ from tqdm import tqdm
 from jumping_quadrupeds.ppo.networks import ConvActorCritic
 from jumping_quadrupeds.utils import preprocess_obs, to_torch
 
+
 class PPOAgent:
     """
     Proximal Policy Optimization (by clipping),
@@ -71,20 +72,15 @@ class PPOAgent:
         self.ac = self.ac.to(self.device)
 
         # Set up optimizers for policy and value function
-        self.pi_optimizer = Adam(
-            self.ac.get_policy_params(), lr=pi_lr
-        )
-        self.vf_optimizer = Adam(
-            self.ac.get_value_params(), lr=vf_lr
-        )
-
+        self.pi_optimizer = Adam(self.ac.get_policy_params(), lr=pi_lr)
+        self.vf_optimizer = Adam(self.ac.get_value_params(), lr=vf_lr)
 
     def compute_loss_pi(self, obs, act, adv, logp_old):
         """Computes policy loss"""
         obs = preprocess_obs(obs, self.device)
-
         # Policy loss
         pi, logp = self.ac.pi(obs, act)
+        adv = adv.unsqueeze(1)
         ratio = torch.exp(logp - logp_old)
         clip_adv = (
             torch.clamp(
@@ -99,13 +95,9 @@ class PPOAgent:
         # Useful extra info
         approx_kl = (logp_old - logp).mean().item()
         ent = pi.entropy().mean().item()
-        clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(
-            1 - self.clip_ratio
-        )
+        clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-        pi_info = dict(
-            kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv
-        )
+        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv)
 
         return loss_pi, pi_info
 
@@ -117,18 +109,15 @@ class PPOAgent:
     def update(self, replay_loader, step):
         """Updates the policy and value function based on the latest replay buffer"""
         metrics = {}
-        obs, action, rew, adv, ret, logp = to_torch(next(iter(replay_iter)).values(), self.device)
 
+        obs, action, rew, ret, adv, logp = to_torch(next(replay_loader), self.device)
         self.ac.train()
-
         for i in range(self.train_pi_iters):
             self.pi_optimizer.zero_grad()
             loss_pi, pi_info = self.compute_loss_pi(obs, action, adv, logp)
             kl = np.mean(pi_info["kl"])
             if kl > self.target_kl:
-                tqdm.write(
-                    f"Early stopping at step {i}/{self.train_pi_iters} due to reaching max kl."
-                )
+                tqdm.write(f"Early stopping at step {i}/{self.train_pi_iters} due to reaching max kl.")
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
@@ -146,7 +135,8 @@ class PPOAgent:
         adv_std = pi_info["adv"].detach().std().cpu().numpy()
         ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
         ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
-        metrics.update({
+        metrics.update(
+            {
                 "log-p": logp_mean,
                 "loss-pi": loss_pi.detach().item(),
                 "loss-v": loss_v.item(),
@@ -158,24 +148,25 @@ class PPOAgent:
                 "adv-std": adv_std,
                 "ratio-mean": ratio_mean,
                 "ratio-std": ratio_std,
-            })
+                "action": action.detach().cpu().numpy(),
+            }
+        )
         return metrics
 
-
     def save_checkpoint(self, path):
-        checkpoint = {'ac': self.ac.state_dict(),
-                      'actor_opt': self.pi_optimizer.state_dict(),
-                      'critic_opt': self.vf_optimizer.state_dict(),
-                      }
+        checkpoint = {
+            "ac": self.ac.state_dict(),
+            "actor_opt": self.pi_optimizer.state_dict(),
+            "critic_opt": self.vf_optimizer.state_dict(),
+        }
         torch.save(checkpoint, path)
 
     def load_checkpoint(self, path):
         print(f"loading checkpoint from: {path}")
         checkpoint = torch.load(path)
-        self.ac.load_state_dict(checkpoint['ac'])
-        self.pi_optimizer.load_state_dict(checkpoint['actor_opt'])
-        self.vf_optimizer.load_state_dict(checkpoint['critic_opt'])
-
+        self.ac.load_state_dict(checkpoint["ac"])
+        self.pi_optimizer.load_state_dict(checkpoint["actor_opt"])
+        self.vf_optimizer.load_state_dict(checkpoint["critic_opt"])
 
     def act(self, obs, step, eval_mode):
         return self.ac.step(obs, eval_mode)

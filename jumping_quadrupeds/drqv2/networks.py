@@ -2,11 +2,12 @@ import torch
 import torch.nn as nn
 from jumping_quadrupeds.utils import TruncatedNormal, weight_init
 
+
 class Encoder(nn.Module):
     def __init__(self, obs_space):
         super().__init__()
 
-        assert len(obs_space.shape) == 3
+        # assert len(obs_space.shape) == 3
         self.repr_dim = 32 * 35 * 35
 
         self.convnet = nn.Sequential(
@@ -34,9 +35,7 @@ class Actor(nn.Module):
         self.action_space = action_space
         self.low = action_space.low[0]
         self.high = action_space.high[0]
-        self.trunk = nn.Sequential(
-            nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh()
-        )
+        self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
         self.log_std = None
         if log_std:
             self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
@@ -72,9 +71,7 @@ class Critic(nn.Module):
     def __init__(self, repr_dim, action_space, feature_dim, hidden_dim):
         super().__init__()
 
-        self.trunk = nn.Sequential(
-            nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh()
-        )
+        self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
 
         self.Q1 = nn.Sequential(
             nn.Linear(feature_dim + action_space.shape[0], hidden_dim),

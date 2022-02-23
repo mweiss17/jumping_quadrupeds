@@ -1,4 +1,10 @@
-### DRQ-v2 Agent Base Configuration ###
+env:
+  kwargs:
+    name: dm-quadruped_walk
+    render_every: 2 # (int): Frequency at which to create a video of a rollout.
+    action_repeat: 2
+    frame_stack: 3
+
 agent:
   name: drqv2
   kwargs:
@@ -16,7 +22,7 @@ agent:
       name: linear
       start: 1.0
       end: 0.1
-      num_steps: 100000
+      num_steps: 500000
 
 
 ### Off-Policy Buffer Configuration ###
@@ -28,5 +34,5 @@ buffer:
     batch_size: 256
     fetch_every: 1000
     num_workers: 4
-    save_snapshot: false
+    save_snapshot: True
     discount: 0.99
