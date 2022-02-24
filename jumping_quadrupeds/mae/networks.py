@@ -180,7 +180,7 @@ class GEGLU(nn.Module):
 
 
 class FeedForwardGEGLU(nn.Module):
-    def __init__(self, dim, mult=4):
+    def __init__(self, dim, hidden_dim, dropout=0.0, mult=4):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(dim, dim * mult * 2), GEGLU(), nn.Linear(dim * mult, dim))
 
