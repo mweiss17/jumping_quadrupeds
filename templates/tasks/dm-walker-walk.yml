@@ -1,10 +1,13 @@
 env:
   kwargs:
-    name: dm-quadruped_walk
+    name: dm-walker_walk
     render_every: 25 # (int): Frequency at which to create a video of a rollout.
     action_repeat: 2
     frame_stack: 3
-#
+buffer:
+  kwargs:
+    batch_size: 512
+
 #agent:
 #  name: drqv2
 #  kwargs:

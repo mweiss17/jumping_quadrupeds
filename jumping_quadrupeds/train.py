@@ -8,7 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional, Union
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
-from jumping_quadrupeds.buffer import ReplayBuffer, ReplayBufferStorage
+from jumping_quadrupeds.buffer import ReplayBufferStorage
 from jumping_quadrupeds.env import make_env
 from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, buffer_loader_factory
 from jumping_quadrupeds.ppo.agent import PPOAgent

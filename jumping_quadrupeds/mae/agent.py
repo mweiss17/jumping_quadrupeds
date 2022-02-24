@@ -10,6 +10,7 @@ from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, pre
 from jumping_quadrupeds.mae.networks import Actor, Critic, Encoder, MAE, ViT
 from jumping_quadrupeds.augs import RandomShiftsAug
 
+
 class MAEAgent:
     def __init__(
         self,
@@ -40,7 +41,7 @@ class MAEAgent:
         mae_decoder_depth=2,
         mae_decoder_heads=1,
         mae_decoder_dim_head=128,
-        **kwargs
+        **kwargs,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -49,7 +50,6 @@ class MAEAgent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
-
         vit = ViT(
             image_size=obs_space.shape[-1],
             patch_size=patch_size,
@@ -61,6 +61,7 @@ class MAEAgent:
             mlp_dim=mae_encoder_mlp_dim,
             dropout=mae_encoder_dropout,
             emb_dropout=mae_encoder_emb_dropout,
+            channels=obs_space.shape[0],
         ).to(device)
         mae = MAE(
             encoder=vit,
@@ -74,16 +75,10 @@ class MAEAgent:
 
         # models
         self.encoder = mae.to(device)
-        self.actor = Actor(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init
-        ).to(device)
+        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
 
-        self.critic = Critic(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
-        ).to(device)
-        self.critic_target = Critic(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim
-        ).to(device)
+        self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
@@ -115,7 +110,7 @@ class MAEAgent:
             action = dist.sample(clip=None)
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
-        value = np.array([0.], dtype=np.float32)
+        value = np.array([0.0], dtype=np.float32)
         log_p = dist.log_prob(action).detach().cpu().numpy()[0]
         action = action.detach().cpu().numpy()[0]
         return action, value, log_p
@@ -138,7 +133,9 @@ class MAEAgent:
         metrics["critic_q1"] = Q1.mean().item()
         metrics["critic_q2"] = Q2.mean().item()
         metrics["critic_loss"] = critic_loss.item()
-        metrics["action_noise_std_dev"] = stddev.item() if stddev is not None else self.actor.log_std.detach().cpu().numpy()
+        metrics["action_noise_std_dev"] = (
+            stddev.item() if stddev is not None else self.actor.log_std.detach().cpu().numpy()
+        )
 
         # optimize encoder and critic
         self.encoder_opt.zero_grad(set_to_none=True)
@@ -184,7 +181,7 @@ class MAEAgent:
 
     def update(self, replay_loader, step):
         metrics = dict()
-        obs, action, reward, discount, next_obs = to_torch(next(replay_loader).values(), self.device)
+        obs, action, reward, discount, next_obs = to_torch(next(replay_loader), self.device)
 
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
@@ -204,9 +201,7 @@ class MAEAgent:
 
         metrics["batch_reward"] = reward.mean().item()
         # update critic
-        metrics.update(
-            self.update_critic(obs, action, reward, discount, next_obs, step)
-        )
+        metrics.update(self.update_critic(obs, action, reward, discount, next_obs, step))
 
         # update actor
         metrics.update(self.update_actor(obs.detach(), step))
@@ -217,23 +212,24 @@ class MAEAgent:
         return metrics
 
     def save_checkpoint(self, path):
-        checkpoint = {'actor': self.actor.state_dict(),
-                      'critic': self.critic.state_dict(),
-                      'critic_target': self.critic_target.state_dict(),
-                      'encoder': self.encoder.state_dict(),
-                      'encoder_opt': self.encoder_opt.state_dict(),
-                      'actor_opt': self.actor_opt.state_dict(),
-                      'critic_opt': self.critic_opt.state_dict(),
-                      }
+        checkpoint = {
+            "actor": self.actor.state_dict(),
+            "critic": self.critic.state_dict(),
+            "critic_target": self.critic_target.state_dict(),
+            "encoder": self.encoder.state_dict(),
+            "encoder_opt": self.encoder_opt.state_dict(),
+            "actor_opt": self.actor_opt.state_dict(),
+            "critic_opt": self.critic_opt.state_dict(),
+        }
         torch.save(checkpoint, path)
 
     def load_checkpoint(self, path):
         print(f"loading checkpoint from: {path}")
         checkpoint = torch.load(path)
-        self.actor.load_state_dict(checkpoint['actor'])
-        self.critic.load_state_dict(checkpoint['critic'])
-        self.critic_target.load_state_dict(checkpoint['critic_target'])
-        self.encoder.load_state_dict(checkpoint['encoder'])
-        self.encoder_opt.load_state_dict(checkpoint['encoder_opt'])
-        self.actor_opt.load_state_dict(checkpoint['actor_opt'])
-        self.critic_opt.load_state_dict(checkpoint['critic_opt'])
+        self.actor.load_state_dict(checkpoint["actor"])
+        self.critic.load_state_dict(checkpoint["critic"])
+        self.critic_target.load_state_dict(checkpoint["critic_target"])
+        self.encoder.load_state_dict(checkpoint["encoder"])
+        self.encoder_opt.load_state_dict(checkpoint["encoder_opt"])
+        self.actor_opt.load_state_dict(checkpoint["actor_opt"])
+        self.critic_opt.load_state_dict(checkpoint["critic_opt"])

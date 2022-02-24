@@ -1,5 +1,4 @@
 import numpy as np
-from jumping_quadrupeds.buffer import ReplayBuffer
 
 
 class OffPolicySequentialReplayBuffer(ReplayBuffer):

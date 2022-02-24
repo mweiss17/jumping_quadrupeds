@@ -10,9 +10,8 @@ from torchvision.transforms import transforms
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
 from collections import defaultdict, namedtuple
+from jumping_quadrupeds.buffer import OffPolicyReplayBuffer
 from jumping_quadrupeds.ppo.buffer import OnPolicyReplayBuffer
-from jumping_quadrupeds.drqv2.buffer import OffPolicyReplayBuffer
-from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
 from torch.utils.data import IterableDataset
 
 T_co = TypeVar("T_co", covariant=True)
