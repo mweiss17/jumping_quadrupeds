@@ -5,7 +5,8 @@ import torch
 from torch.optim import Adam
 from tqdm import tqdm
 from jumping_quadrupeds.ppo.networks import ConvActorCritic
-from jumping_quadrupeds.utils import preprocess_obs
+from jumping_quadrupeds.utils import preprocess_obs, to_torch
+
 
 class PPOAgent:
     """
@@ -71,21 +72,15 @@ class PPOAgent:
         self.ac = self.ac.to(self.device)
 
         # Set up optimizers for policy and value function
-        self.pi_optimizer = Adam(
-            self.ac.get_policy_params(), lr=pi_lr
-        )
-        self.vf_optimizer = Adam(
-            self.ac.get_value_params(), lr=vf_lr
-        )
+        self.pi_optimizer = Adam(self.ac.get_policy_params(), lr=pi_lr)
+        self.vf_optimizer = Adam(self.ac.get_value_params(), lr=vf_lr)
 
-
-    def compute_loss_pi(self, data):
+    def compute_loss_pi(self, obs, act, adv, logp_old):
         """Computes policy loss"""
-        obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
         obs = preprocess_obs(obs, self.device)
-
         # Policy loss
         pi, logp = self.ac.pi(obs, act)
+        adv = adv.unsqueeze(1)
         ratio = torch.exp(logp - logp_old)
         clip_adv = (
             torch.clamp(
@@ -100,106 +95,78 @@ class PPOAgent:
         # Useful extra info
         approx_kl = (logp_old - logp).mean().item()
         ent = pi.entropy().mean().item()
-        clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(
-            1 - self.clip_ratio
-        )
+        clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-        pi_info = dict(
-            kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv
-        )
+        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac, logp=logp, ratio=ratio, adv=adv)
 
         return loss_pi, pi_info
 
-    def compute_loss_v(self, data):
+    def compute_loss_v(self, obs, ret):
         """Computes value loss"""
-        obs, ret = data["obs"], data["ret"]
         obs = preprocess_obs(obs, self.device)
-        value_estimate = self.ac.v(obs)
-        return value_estimate, ((value_estimate - ret) ** 2).mean()
+        return ((self.ac.v(obs) - ret) ** 2).mean()
 
-    def update(self, replay_iter, step):
+    def update(self, replay_loader, step):
         """Updates the policy and value function based on the latest replay buffer"""
         metrics = {}
-        data = next(replay_iter)
 
+        obs, action, rew, ret, adv, logp = to_torch(next(replay_loader), self.device)
         self.ac.train()
-
         for i in range(self.train_pi_iters):
             self.pi_optimizer.zero_grad()
-            loss_pi, pi_info = self.compute_loss_pi(data)
+            loss_pi, pi_info = self.compute_loss_pi(obs, action, adv, logp)
             kl = np.mean(pi_info["kl"])
             if kl > self.target_kl:
-                tqdm.write(
-                    f"Early stopping at step {i}/{self.train_pi_iters} due to reaching max kl."
-                )
+                tqdm.write(f"Early stopping at step {i}/{self.train_pi_iters} due to reaching max kl.")
                 break
             loss_pi.backward()
             self.pi_optimizer.step()
 
         for i in range(self.train_v_iters):
             self.vf_optimizer.zero_grad()
-            value_estimate, loss_v = self.compute_loss_v(data)
+            loss_v = self.compute_loss_v(obs, ret)
             loss_v.backward()
             self.vf_optimizer.step()
 
-        if self.use_wandb:
-            action_mean = data["act"].detach().mean(axis=0).cpu().numpy()
-            action_std = data["act"].detach().std(axis=0).cpu().numpy()
-            logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
-            adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
-            adv_std = pi_info["adv"].detach().std().cpu().numpy()
-            ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
-            ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
-            metrics = {
-                    "act-mean-turn": action_mean[0],
-                    "act-mean-gas": action_mean[1],
-                    "act-mean-brake": action_mean[2],
-                    "log-p-turn": logp_mean[0],
-                    "log-p-gas": logp_mean[1],
-                    "log-p-brake": logp_mean[2],
-                    "act-std-turn": action_std[0],
-                    "act-std-gas": action_std[1],
-                    "act-std-brake": action_std[2],
-                    "loss-pi": loss_pi.detach().item(),
-                    "loss-v": loss_v.item(),
-                    "value-estimate": value_estimate.detach().mean().cpu().numpy(),
-                    "true-return": data["ret"].detach().mean().cpu().numpy(),
-                    "KL": kl,
-                    "entropy": np.mean(pi_info["ent"]),
-                    "clip-frac": np.mean(pi_info["cf"]),
-                    "adv-mean": adv_mean,
-                    "adv-std": adv_std,
-                    "ratio-mean": ratio_mean,
-                    "ratio-std": ratio_std,
-                }
-            if len(action_mean)>3:
-                metrics["act-mean-view"] = action_mean[3]
+        metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
+        metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
+        logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
+        adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
+        adv_std = pi_info["adv"].detach().std().cpu().numpy()
+        ratio_mean = pi_info["ratio"].detach().mean().cpu().numpy()
+        ratio_std = pi_info["ratio"].detach().std().cpu().numpy()
+        metrics.update(
+            {
+                "log-p": logp_mean,
+                "loss-pi": loss_pi.detach().item(),
+                "loss-v": loss_v.item(),
+                "true-return": ret.detach().mean().cpu().numpy(),
+                "KL": kl,
+                "entropy": np.mean(pi_info["ent"]),
+                "clip-frac": np.mean(pi_info["cf"]),
+                "adv-mean": adv_mean,
+                "adv-std": adv_std,
+                "ratio-mean": ratio_mean,
+                "ratio-std": ratio_std,
+                "action": action.detach().cpu().numpy(),
+            }
+        )
         return metrics
 
+    def save_checkpoint(self, path):
+        checkpoint = {
+            "ac": self.ac.state_dict(),
+            "actor_opt": self.pi_optimizer.state_dict(),
+            "critic_opt": self.vf_optimizer.state_dict(),
+        }
+        torch.save(checkpoint, path)
 
-    def save_checkpoint(self, exp_dir, epoch):
-        torch.save(
-            self.ac.state_dict(),
-            f"{exp_dir}/Weights/ac-{epoch}.pt",
-        )
-        torch.save(
-            self.pi_optimizer.state_dict(),
-            f"{exp_dir}/Weights/pi-optim-{epoch}.pt",
-        )
-        torch.save(
-            self.vf_optimizer.state_dict(),
-            f"{exp_dir}/Weights/vf-optim-{epoch}.pt",
-        )
-
-    def load_checkpoint(self):
-        self.ac.load_state_dict(torch.load(self.ac_checkpoint))
-        self.pi_optimizer.load_state_dict(
-            torch.load(self.pi_optim_checkpoint)
-        )
-        self.vf_optimizer.load_state_dict(
-            torch.load(self.vf_optim_checkpoint)
-        )
-
+    def load_checkpoint(self, path):
+        print(f"loading checkpoint from: {path}")
+        checkpoint = torch.load(path)
+        self.ac.load_state_dict(checkpoint["ac"])
+        self.pi_optimizer.load_state_dict(checkpoint["actor_opt"])
+        self.vf_optimizer.load_state_dict(checkpoint["critic_opt"])
 
     def act(self, obs, step, eval_mode):
         return self.ac.step(obs, eval_mode)

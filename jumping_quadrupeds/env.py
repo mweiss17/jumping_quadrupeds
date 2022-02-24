@@ -1,11 +1,22 @@
+import torch
 import numpy as np
 import wandb
 import gym
 import importlib
 import cv2
+import dm_env
+import enum
+
+from collections import deque
+from einops import rearrange
+from typing import Any, NamedTuple
+
+from jumping_quadrupeds.frame_stack import FrameStack
+
 try:
     import dm_control
     import dmc2gym
+    from dm_control.suite.wrappers import action_scale, pixels
 except ImportError:
     dm_control = None
 
@@ -13,6 +24,27 @@ try:
     import SEVN_gym
 except ImportError:
     SEVN_gym = None
+
+
+class StepType(enum.IntEnum):
+    """Defines the status of a `TimeStep` within a sequence."""
+
+    # Denotes the first `TimeStep` in a sequence.
+    FIRST = 0
+    # Denotes any `TimeStep` in a sequence that is not FIRST or LAST.
+    MID = 1
+    # Denotes the last `TimeStep` in a sequence.
+    LAST = 2
+
+    def first(self) -> bool:
+        return self is StepType.FIRST
+
+    def mid(self) -> bool:
+        return self is StepType.MID
+
+    def last(self) -> bool:
+        return self is StepType.LAST
+
 
 class VideoWrapper(gym.Wrapper):
     """Gathers up the frames from an episode and allows to upload them to Weights & Biases
@@ -41,11 +73,11 @@ class VideoWrapper(gym.Wrapper):
 
         return state
 
-    def step(self, action, render_type="state_pixels"): #rgb_array
+    def step(self, action, render_type="state_pixels"):  # rgb_array
         state, reward, done, info = self.env.step(action)
 
         if self.episode_no + 1 == self.render_every_n_episodes:
-            # frame = np.copy(self.env.render(render_type))
+            # frame = np.copy(self.envs.render(render_type))
             self.episode_images.append(np.copy(state))
 
         return state, reward, done, info
@@ -72,9 +104,7 @@ class ActionScale(gym.core.Wrapper):
         orig_max = self.env.action_space.high
         new_min = np.array(new_min)
         new_max = np.array(new_max)
-        self._transform = lambda a: orig_min + (orig_max - orig_min) / (
-            new_max - new_min
-        ) * (a - new_min)
+        self._transform = lambda a: orig_min + (orig_max - orig_min) / (new_max - new_min) * (a - new_min)
         self.env.action_space.low = np.repeat([new_min], env.action_space.shape)
         self.env.action_space.high = np.repeat([new_max], env.action_space.shape)
 
@@ -103,7 +133,6 @@ class PyTorchObsWrapper(gym.ObservationWrapper):
     def observation(self, observation):
         observation = observation.transpose(2, 0, 1)
         return observation
-
 
 
 class ResizeWrapper(gym.ObservationWrapper):
@@ -141,14 +170,79 @@ class ResizeWrapper(gym.ObservationWrapper):
         )
 
 
-def make_env(seed=-1, name=None, action_repeat=None, w=84, h=84, render_every=None, **kwargs):
+class ExtendedTimeStep(NamedTuple):
+    step_type: Any
+    reward: Any
+    discount: Any
+    observation: Any
+    action: Any
+
+    def first(self):
+        return self.step_type == StepType.FIRST
+
+    def mid(self):
+        return self.step_type == StepType.MID
+
+    def last(self):
+        return self.step_type == StepType.LAST
+
+    def __getitem__(self, attr):
+        return getattr(self, attr)
+
+
+class ExtendedTimeStepWrapper(dm_env.Environment):
+    def __init__(self, env):
+        self._env = env
+
+    def reset(self):
+        time_step = self._env.reset()
+        return self._augment_time_step(time_step)
+
+    def step(self, action):
+        time_step = self._env.step(action)
+        return self._augment_time_step(time_step, action)
+
+    def _augment_time_step(self, time_step, action=None):
+        if action is None:
+            action_spec = self.action_spec()
+            action = np.zeros(action_spec.shape, dtype=action_spec.dtype)
+        observation = time_step[0]
+        discount = np.array([1.0], dtype=np.float32)
+        if len(time_step) == 1:
+            step_type = StepType.FIRST
+            reward = np.array([0.0], dtype=np.float32)
+        if len(time_step) > 1:
+            reward = np.array([time_step[1]], dtype=np.float32)
+            done = time_step[2]
+            if done:
+                step_type = StepType.LAST
+            else:
+                step_type = StepType.MID
+        return ExtendedTimeStep(
+            observation=observation,
+            step_type=step_type,
+            action=action,
+            reward=reward,
+            discount=discount,
+        )
+
+    def observation_spec(self):
+        return self._env.observation_space
+
+    def action_spec(self):
+        return self._env.action_space
+
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+
+def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, render_every=None, **kwargs):
     if "Duckietown" in name:
         import gym_duckietown
 
     if name.startswith("dm-"):
         domain, task = name[3:].split("_")
         camera_id = dict(quadruped=2).get(domain, 0)
-
         env = dmc2gym.make(
             domain,
             task,
@@ -166,6 +260,8 @@ def make_env(seed=-1, name=None, action_repeat=None, w=84, h=84, render_every=No
     else:
         raise ValueError(f"Unknown environment name: {name}.")
     env = ActionScale(env, new_min=-1.0, new_max=1.0)
+    env = FrameStack(env, frame_stack)
     env = VideoWrapper(env, update_freq=render_every)
+    env = ExtendedTimeStepWrapper(env)
     env.seed(seed)
     return env

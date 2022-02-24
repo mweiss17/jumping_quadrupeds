@@ -12,7 +12,7 @@ setup(
     url="",
     install_requires=[
         "torch>=1.8",
-        'opencv-python',
+        "opencv-python",
         "tqdm",
         "attrs",
         "pillow",
@@ -26,6 +26,8 @@ setup(
         "rich",
         "submitit",
         "kornia",
+        "dill",
+        "h5py",
         "gym @ git+https://git@github.com/tesfaldet/gym@master#egg=gym",
         "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
         "wormulon @ git+ssh://git@github.com/mweiss17/wormulon@main#egg=wormulon",
@@ -33,12 +35,11 @@ setup(
     ],
     extras_require={
         "dmc": [
-            "dm_control @ git+git://github.com/deepmind/dm_control.git",
+            # "dm_control @ git+git://github.com/deepmind/dm_control.git",
             "dmc2gym @  git+git://github.com/denisyarats/dmc2gym.git",
             "mujoco_py",
+            "dm-env",
         ],
-        "meta": [
-            "torchmeta"
-        ]
+        "meta": ["torchmeta"],
     },
 )

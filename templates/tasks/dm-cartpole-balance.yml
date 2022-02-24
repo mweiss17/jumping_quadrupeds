@@ -1,0 +1,6 @@
+env:
+  kwargs:
+    name: dm-cartpole_balance
+    render_every: 25 # (int): Frequency at which to create a video of a rollout.
+    action_repeat: 2
+    frame_stack: 3
