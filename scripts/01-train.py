@@ -17,7 +17,7 @@ from jumping_quadrupeds.mae.agent import MAEAgent
 
 class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointable):
     WANDB_ENTITY = "jumping_quadrupeds"
-    WANDB_PROJECT = "rl-encoder-test"
+    WANDB_PROJECT = "drqv2-mae-ppo-comparison"
 
     def __init__(self):
         super(Trainer, self).__init__()
