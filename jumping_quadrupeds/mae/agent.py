@@ -36,11 +36,16 @@ class MAEAgent:
         mae_encoder_mlp_dim=512,
         mae_encoder_dropout=0.1,
         mae_encoder_emb_dropout=0.1,
+        mae_encoder_nonlinearity="gelu",
+        mae_encoder_use_last_ln=True,
+        mae_encoder_qkv_bias=False,
         mae_masking_ratio=0.75,
         mae_decoder_dim=512,
         mae_decoder_depth=2,
         mae_decoder_heads=1,
         mae_decoder_dim_head=128,
+        use_actor_ln=True,
+        weight_decay=0.01,
         **kwargs,
     ):
         self.device = device
@@ -62,6 +67,9 @@ class MAEAgent:
             dropout=mae_encoder_dropout,
             emb_dropout=mae_encoder_emb_dropout,
             channels=obs_space.shape[0],
+            encoder_nonlinearity=mae_encoder_nonlinearity,
+            use_last_ln=mae_encoder_use_last_ln,
+            qkv_bias=mae_encoder_qkv_bias,
         ).to(device)
         mae = MAE(
             encoder=vit,
@@ -75,16 +83,20 @@ class MAEAgent:
 
         # models
         self.encoder = mae.to(device)
-        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
+        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(
+            device
+        )
 
         self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
-        self.encoder_opt = torch.optim.AdamW(self.encoder.parameters(), lr=encoder_lr)
-        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
-        self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=critic_lr if critic_lr else lr)
+        self.encoder_opt = torch.optim.AdamW(self.encoder.parameters(), lr=encoder_lr, weight_decay=weight_decay)
+        self.actor_opt = torch.optim.AdamW(self.actor.parameters(), lr=lr, weight_decay=weight_decay)
+        self.critic_opt = torch.optim.AdamW(
+            self.critic.parameters(), lr=critic_lr if critic_lr else lr, weight_decay=weight_decay
+        )
 
         # data augmentation
         self.aug = RandomShiftsAug(pad=4)

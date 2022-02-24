@@ -86,12 +86,16 @@ class Encoder(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std):
+    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std, use_actor_ln):
         super().__init__()
         self.action_space = action_space
         self.low = action_space.low[0]
         self.high = action_space.high[0]
-        self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
+        if use_actor_ln:
+            self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
+        else:
+            self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.Tanh())
+
         self.log_std = None
         if log_std:
             self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
@@ -169,6 +173,21 @@ class PreNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 
+class GEGLU(nn.Module):
+    def forward(self, x):
+        x, gates = x.chunk(2, dim=-1)
+        return x * F.gelu(gates)
+
+
+class FeedForwardGEGLU(nn.Module):
+    def __init__(self, dim, mult=4):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(dim, dim * mult * 2), GEGLU(), nn.Linear(dim * mult, dim))
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout=0.0):
         super().__init__()
@@ -181,7 +200,7 @@ class FeedForward(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
+    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0, use_bias=False):
         super().__init__()
         inner_dim = dim_head * heads
         project_out = not (heads == 1 and dim_head == dim)
@@ -190,7 +209,7 @@ class Attention(nn.Module):
         self.scale = dim_head**-0.5
 
         self.attend = nn.Softmax(dim=-1)
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=use_bias)
 
         self.to_out = nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout)) if project_out else nn.Identity()
 
@@ -208,15 +227,18 @@ class Attention(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0, encoder_nonlinearity="gelu", qkv_bias=False):
         super().__init__()
         self.layers = nn.ModuleList([])
+        ffn = FeedForward if encoder_nonlinearity == "gelu" else FeedForwardGEGLU
         for _ in range(depth):
             self.layers.append(
                 nn.ModuleList(
                     [
-                        PreNorm(dim, Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout)),
-                        PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout)),
+                        PreNorm(
+                            dim, Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout, qkv_bias=qkv_bias)
+                        ),
+                        PreNorm(dim, ffn(dim, mlp_dim, dropout=dropout)),
                     ]
                 )
             )
@@ -243,7 +265,10 @@ class ViT(nn.Module):
         channels=3,
         dim_head=64,
         dropout=0.0,
-        emb_dropout=0.0
+        emb_dropout=0.0,
+        encoder_nonlinearity="gelu",
+        use_last_ln=True,
+        qkv_bias=False,
     ):
         super().__init__()
         self.dim = dim
@@ -267,12 +292,14 @@ class ViT(nn.Module):
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
         self.dropout = nn.Dropout(emb_dropout)
 
-        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
+        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout, encoder_nonlinearity, qkv_bias)
 
         self.pool = pool
         self.to_latent = nn.Identity()
-
-        self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
+        if use_last_ln:
+            self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
+        else:
+            self.mlp_head = nn.Sequential(nn.Linear(dim, num_classes))
 
     def forward(self, imgs):
         x = self.to_patch_embedding(imgs)
@@ -302,7 +329,7 @@ class MAE(nn.Module):
         decoder_heads=8,
         decoder_dim_head=64,
         mask_strat="all",
-        device=None
+        device=None,
     ):
         super().__init__()
         assert masking_ratio > 0 and masking_ratio < 1, "masking ratio must be kept between 0 and 1"

@@ -26,22 +26,15 @@ agent:
     mae_encoder_mlp_dim: 128  # 2048
     mae_encoder_dropout: 0.0
     mae_encoder_emb_dropout: 0.0
+    mae_encoder_nonlinearity: "geglu"
+    mae_encoder_qkv_bias: False
+    mae_encoder_use_last_ln: True
     mae_decoder_dim: 256 #64 * nheads
     mae_decoder_depth: 1
     mae_decoder_dim_head: 64
     mae_decoder_heads: 4
-#            decoder_depth=1,
-#            decoder_heads=8,
-#            decoder_dim_head=64,
-#        mae_decoder_dim=512,
-#        mae_decoder_depth=2,
-#    vit_depth: 2
-#    vit_dim: 512
-#    vit_dropout: 0.0
-#    vit_emb_dropout: 0.0
-#    vit_heads: 8
-#    vit_mlp_dim: 512
-
+    use_actor_ln: True
+    weight_decay: 0.01
 
 ### Off-Policy Buffer Configuration ###
 buffer:
