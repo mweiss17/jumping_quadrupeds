@@ -37,6 +37,7 @@ class MAEAgent:
         mae_masking_ratio=0.75,
         mae_decoder_dim=512,
         mae_decoder_depth=2,
+        discrete=False,
         **kwargs
     ):
         self.device = device
@@ -46,6 +47,7 @@ class MAEAgent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
+        self.discrete = discrete
 
         vit = ViT(
             image_size=obs_space.shape[-1],
@@ -69,7 +71,7 @@ class MAEAgent:
         # models
         self.encoder = mae.to(device)
         self.actor = Actor(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete
         ).to(device)
 
         self.critic = Critic(

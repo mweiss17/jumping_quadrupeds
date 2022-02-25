@@ -1,4 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
+    # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,6 +25,7 @@ class DrQV2Agent:
         stddev_schedule,
         stddev_clip,
         log_std_init,
+        discrete,
         **kwargs
     ):
         self.device = device
@@ -34,10 +35,11 @@ class DrQV2Agent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
+        self.discrete = discrete
         # models
         self.encoder = Encoder(obs_space).to(device)
         self.actor = Actor(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete
         ).to(device)
 
         self.critic = Critic(

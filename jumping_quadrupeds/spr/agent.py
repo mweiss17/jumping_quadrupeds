@@ -37,6 +37,7 @@ class SPRAgent:
         log_std_init,
         classifier_type,
         use_spr,
+        discrete,
         **kwargs
     ):
         self.device = device
@@ -53,12 +54,13 @@ class SPRAgent:
         self.log_std_init = log_std_init
         self.classifier_type = classifier_type
         self.use_spr = use_spr
+        self.discrete = discrete
 
         # models
         out_channels = 32
         self.encoder = Encoder(obs_space, out_channels).to(device)
         self.actor = Actor(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete
         ).to(device)
 
         self.critic = Critic(

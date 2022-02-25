@@ -3,6 +3,7 @@ from torch import nn
 
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.utils import TruncatedNormal
+from torch.distributions.one_hot_categorical import OneHotCategorical
 
 
 class Actor(nn.Module):
@@ -55,8 +56,8 @@ class AbstractActorCritic(nn.Module):
         pass
 
 
-class CNNGaussianActor(Actor):
-    def __init__(self, encoder, action_space, hidden_sizes, log_std):
+class CNNActor(Actor):
+    def __init__(self, encoder, action_space, hidden_sizes, log_std, discrete=False):
         super().__init__()
         self.encoder = encoder
         self.action_space = action_space
@@ -64,14 +65,22 @@ class CNNGaussianActor(Actor):
         self.high = action_space.high[0]
         self.linear = nn.Linear(64 * hidden_sizes, self.action_space.shape[0])
         self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
+        self.discrete = discrete
 
     def _distribution(self, obs):
         if len(obs.shape) == 3:
             obs = obs.unsqueeze(0)
         preactivations = self.encoder(obs)
-        mu = torch.tanh(self.linear(preactivations))
-        std = torch.exp(self.log_std)
-        return TruncatedNormal(mu, std, low=self.low, high=self.high)
+        mu = self.linear(preactivations)
+
+        if self.discrete:
+            dist = OneHotCategorical(logits=mu)
+        else:
+            mu = torch.tanh(mu)
+            std = torch.exp(self.log_std)
+            dist = TruncatedNormal(mu, std, low=self.low, high=self.high)
+
+        return dist
 
     def _log_prob_from_distribution(self, pi, act):
         return pi.log_prob(act)
@@ -95,6 +104,7 @@ class ConvActorCritic(AbstractActorCritic):
         shared_encoder=False,
         hidden_sizes=16,
         log_std=0.5,
+        discrete=False,
     ):
         super().__init__()
 
@@ -104,11 +114,12 @@ class ConvActorCritic(AbstractActorCritic):
         critic_encoder = (
             actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
         )
-        self.pi = CNNGaussianActor(
+        self.pi = CNNActor(
             actor_encoder,
             action_space,
             hidden_sizes,  # 4 * 4 square scaling factor for base-racing
             log_std,
+            discrete
         )
 
         # build value function
