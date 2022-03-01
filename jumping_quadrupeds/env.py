@@ -20,11 +20,6 @@ try:
 except ImportError:
     dm_control = None
 
-try:
-    import SEVN_gym
-except ImportError:
-    SEVN_gym = None
-
 
 class StepType(enum.IntEnum):
     """Defines the status of a `TimeStep` within a sequence."""
@@ -257,9 +252,14 @@ def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, ren
         env_name = name[4:]
         env = gym.make(env_name)
         env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
+    elif name.startswith("SEVN-"):
+        import SEVN_gym
+
+        env = gym.make(name)
     else:
         raise ValueError(f"Unknown environment name: {name}.")
-    env = ActionScale(env, new_min=-1.0, new_max=1.0)
+    if isinstance(env.action_space, gym.spaces.box.Box):
+        env = ActionScale(env, new_min=-1.0, new_max=1.0)
     env = FrameStack(env, frame_stack)
     env = VideoWrapper(env, update_freq=render_every)
     env = ExtendedTimeStepWrapper(env)

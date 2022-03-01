@@ -1,5 +1,4 @@
 ### Environment ###
-# gym-SEVN-Train-AllObs-Shaped-v1
 env:
   kwargs:
     name: gym-CarRacing-v0 # gym-CarRacingManualConeObstacles-v0 #  gym-CarRacingCone-v0  # (str): Environment name, used for logging. options include "gym-Duckietown-small_loop-v0" #CarRacing-v0 # dm-quadruped_walk
