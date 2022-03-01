@@ -27,6 +27,7 @@ class DrQV2Agent:
         stddev_schedule,
         stddev_clip,
         log_std_init,
+        discrete,
         **kwargs,
     ):
         self.device = device
@@ -36,9 +37,12 @@ class DrQV2Agent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
+        self.discrete = discrete
         # models
         self.encoder = Encoder(obs_space).to(device)
-        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
+        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete).to(
+            device
+        )
 
         self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from jumping_quadrupeds.utils import TruncatedNormal, weight_init
+from torch.distributions.one_hot_categorical import OneHotCategorical
 
 class Encoder(nn.Module):
     def __init__(self, obs_space, out_channels):
@@ -31,9 +32,10 @@ class Encoder(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std):
+    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std, discrete=False):
         super().__init__()
         self.action_space = action_space
+        self.discrete = discrete
         self.low = action_space.low[0]
         self.high = action_space.high[0]
         self.log_std = None
@@ -58,14 +60,19 @@ class Actor(nn.Module):
         h = self.trunk(obs)
 
         mu = self.policy(h)
-        mu = torch.tanh(mu)
+
         if not std:
             std = torch.exp(self.log_std)
 
         # do it this way to backprop thru
         std = torch.ones_like(mu) * std
 
-        dist = TruncatedNormal(mu, std, low=self.low, high=self.high)
+        if self.discrete:
+            dist = OneHotCategorical(logits=mu)
+        else:
+            mu = torch.tanh(mu)
+            dist = TruncatedNormal(mu, std, low=self.low, high=self.high)
+
         return dist
 
 

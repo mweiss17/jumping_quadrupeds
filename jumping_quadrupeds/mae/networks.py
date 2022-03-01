@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from jumping_quadrupeds.utils import TruncatedNormal, weight_init
+from torch.distributions.one_hot_categorical import OneHotCategorical
 import os
 import torchvision
 import numpy as np
@@ -86,7 +87,7 @@ class Encoder(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std, use_actor_ln):
+    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std, use_actor_ln, discrete=False):
         super().__init__()
         self.action_space = action_space
         self.low = action_space.low[0]
@@ -96,6 +97,8 @@ class Actor(nn.Module):
         else:
             self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.Tanh())
 
+        self.discrete = discrete
+        self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
         self.log_std = None
         if log_std:
             self.log_std = torch.nn.Parameter(log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
@@ -114,7 +117,6 @@ class Actor(nn.Module):
         h = self.trunk(obs)
 
         mu = self.policy(h)
-        mu = torch.tanh(mu)
 
         # If we want to learn the std, then we don't pass in a scheduled std
         if not std:
@@ -123,7 +125,11 @@ class Actor(nn.Module):
         # do it this way to backprop thru
         std = torch.ones_like(mu) * std
 
-        dist = TruncatedNormal(mu, std, low=self.low, high=self.high)
+        if self.discrete:
+            dist = OneHotCategorical(logits=mu)
+        else:
+            mu = torch.tanh(mu)
+            dist = TruncatedNormal(mu, std, low=self.low, high=self.high)
         return dist
 
 

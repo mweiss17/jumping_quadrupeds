@@ -34,6 +34,7 @@ class PPOAgent:
         log_std=None,
         freeze_encoder=None,
         clip_ratio=None,
+        discrete=False,
         **kwargs,
     ) -> None:
 
@@ -50,6 +51,7 @@ class PPOAgent:
         self.ep_len_mean = deque(maxlen=rew_smooth_len)
         self.total_steps = 0
         self.total_episodes = 0
+        self.discrete = discrete
 
         # policy and value networks
         self.ac = ConvActorCritic(
@@ -58,6 +60,7 @@ class PPOAgent:
             shared_encoder=shared_encoder,
             hidden_sizes=conv_ac_hidden_scaling,
             log_std=log_std,
+            discrete=discrete,
         )
 
         # Load checkpoints

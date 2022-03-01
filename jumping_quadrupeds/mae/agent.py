@@ -46,6 +46,7 @@ class MAEAgent:
         mae_decoder_dim_head=128,
         use_actor_ln=True,
         weight_decay=0.01,
+        discrete=False,
         **kwargs,
     ):
         self.device = device
@@ -55,6 +56,8 @@ class MAEAgent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
+        self.discrete = discrete
+
         vit = ViT(
             image_size=obs_space.shape[-1],
             patch_size=patch_size,
@@ -83,10 +86,9 @@ class MAEAgent:
 
         # models
         self.encoder = mae.to(device)
-        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(
-            device
-        )
-
+        self.actor = Actor(
+            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete, use_actor_ln
+        ).to(device)
         self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
