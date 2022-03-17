@@ -12,6 +12,7 @@ from einops import rearrange
 from typing import Any, NamedTuple
 
 from jumping_quadrupeds.frame_stack import FrameStack
+from typing import Dict
 
 try:
     import dm_control
@@ -84,9 +85,6 @@ class VideoWrapper(gym.Wrapper):
 
         frames = np.array(self.last_frames)
         print(frames.shape)
-        # frames = np.swapaxes(lf, 1, 3)
-        # frames = np.swapaxes(frames, 2, 3)
-
         wandb.log({"video": wandb.Video(frames, fps=10, format="gif")})
         print("=== Logged GIF")
         self.last_frames = None
@@ -202,6 +200,7 @@ class ExtendedTimeStepWrapper(dm_env.Environment):
             action_spec = self.action_spec()
             action = np.zeros(action_spec.shape, dtype=action_spec.dtype)
         observation = time_step[0]
+
         discount = np.array([1.0], dtype=np.float32)
         if len(time_step) == 1:
             step_type = StepType.FIRST
@@ -258,10 +257,14 @@ def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, ren
         env = gym.make(name)
     else:
         raise ValueError(f"Unknown environment name: {name}.")
+
     if isinstance(env.action_space, gym.spaces.box.Box):
         env = ActionScale(env, new_min=-1.0, new_max=1.0)
-    env = FrameStack(env, frame_stack)
+
+    if not name.startswith("SEVN-"):
+        env = FrameStack(env, frame_stack)
     env = VideoWrapper(env, update_freq=render_every)
+
     env = ExtendedTimeStepWrapper(env)
     env.seed(seed)
     return env

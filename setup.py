@@ -35,8 +35,7 @@ setup(
     ],
     extras_require={
         "dmc": [
-            "dm_control @ dm-control==0.0.403778684",
-            # "dm_control @ git+git://github.com/deepmind/dm_control.git",
+            "dm-control==0.0.403778684",
             "dmc2gym @  git+git://github.com/denisyarats/dmc2gym.git",
             "mujoco_py",
             "dm-env",

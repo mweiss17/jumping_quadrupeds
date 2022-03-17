@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
-from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
+from jumping_quadrupeds.networks import ContinuousActor, DiscreteActor, Critic, Encoder
 from jumping_quadrupeds.augs import RandomShiftsAug
 
 
@@ -18,16 +18,14 @@ class DrQV2Agent:
         action_space,
         device,
         lr,
+        actor_kwargs,
         critic_lr,
-        feature_dim,
-        hidden_dim,
         critic_target_tau,
         num_expl_steps,
         update_every_steps,
         stddev_schedule,
         stddev_clip,
         log_std_init,
-        discrete,
         **kwargs,
     ):
         self.device = device
@@ -37,15 +35,22 @@ class DrQV2Agent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
-        self.discrete = discrete
         # models
         self.encoder = Encoder(obs_space).to(device)
-        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete).to(
-            device
-        )
 
-        self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
+        actor_kwargs.update(
+            {
+                "repr_dim": self.encoder.repr_dim,
+                "action_space": action_space,
+                "log_std_init": log_std_init,
+            }
+        )
+        if action_space.__class__.__name__ == "Discrete":
+            self.actor = DiscreteActor(**actor_kwargs).to(device)
+        else:
+            self.actor = ContinuousActor(**actor_kwargs).to(device)
+        self.critic = Critic(**actor_kwargs).to(device)
+        self.critic_target = Critic(**actor_kwargs).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers

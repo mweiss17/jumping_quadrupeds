@@ -7,7 +7,8 @@ import torch.nn.functional as F
 import numpy as np
 import os
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
-from jumping_quadrupeds.mae.networks import Actor, Critic, Encoder, MAE, ViT
+from jumping_quadrupeds.mae.networks import MAE, ViT
+from jumping_quadrupeds.networks import DiscreteActor, ContinuousActor, Critic, Encoder
 from jumping_quadrupeds.augs import RandomShiftsAug
 
 
@@ -20,14 +21,13 @@ class MAEAgent:
         lr,
         critic_lr,
         encoder_lr,
-        feature_dim,
-        hidden_dim,
+        log_std_init,
+        actor_kwargs,
         critic_target_tau,
         num_expl_steps,
         update_every_steps,
         stddev_schedule,
         stddev_clip,
-        log_std_init,
         patch_size=12,
         mae_encoder_dim=256,
         mae_encoder_head_dim=64,
@@ -44,9 +44,7 @@ class MAEAgent:
         mae_decoder_depth=2,
         mae_decoder_heads=1,
         mae_decoder_dim_head=128,
-        use_actor_ln=True,
         weight_decay=0.01,
-        discrete=False,
         **kwargs,
     ):
         self.device = device
@@ -56,7 +54,6 @@ class MAEAgent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
-        self.discrete = discrete
 
         vit = ViT(
             image_size=obs_space.shape[-1],
@@ -86,11 +83,20 @@ class MAEAgent:
 
         # models
         self.encoder = mae.to(device)
-        self.actor = Actor(
-            self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, discrete, use_actor_ln
-        ).to(device)
-        self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
+        actor_kwargs.update(
+            {
+                "repr_dim": self.encoder.repr_dim,
+                "action_space": action_space,
+                "log_std_init": log_std_init,
+            }
+        )
+        if action_space.__class__.__name__ == "Discrete":
+            self.actor = DiscreteActor(**actor_kwargs).to(device)
+        else:
+            self.actor = ContinuousActor(**actor_kwargs).to(device)
+
+        self.critic = Critic(**actor_kwargs).to(device)
+        self.critic_target = Critic(**actor_kwargs).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers

@@ -98,5 +98,6 @@ class FrameStack(ObservationWrapper):
 
     def reset(self, **kwargs):
         observation = self.env.reset(**kwargs)
-        [self.frames.append(observation) for _ in range(self.num_stack)]
+        for _ in range(self.num_stack):
+            self.frames.append(observation)
         return (self.observation,)

@@ -41,6 +41,9 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         self._build_agent()
 
     def _build_buffer(self):
+        # breakpoint()
+        # if isinstance(self.env.observation_space, gym.spaces.dict.Dict):
+
         data_specs = [
             DataSpec("observation", self.env.observation_space.shape, np.uint8),
             DataSpec("action", self.env.action_space.shape, np.float32),
@@ -133,16 +136,16 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         return False
 
     def write_logs(self, episode_reward):
+        self.episode_returns.append(episode_reward)
+        self.ep_idx += 1
+
         if self.get("use_wandb"):
-            self.ep_idx += 1
-            self.episode_returns.append(episode_reward)
             self.wandb_log(
                 **{
                     "Episode return": episode_reward,
                     "Number of Episodes": self.ep_idx,
                 }
             )
-
             self.env.send_wandb_video()
 
     def compute_env_specific_metrics(self, metrics):
@@ -187,6 +190,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         for _ in trange(self.get("total_steps")):
             obs = preprocess_obs(time_step.observation, self.device)
             action, val, logp = self.agent.act(obs, self.step, eval_mode=False)
+
             time_step = self.env.step(action)
             self.next_step()
             self.replay_storage.add(time_step, val, logp)
