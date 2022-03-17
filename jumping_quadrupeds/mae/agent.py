@@ -4,8 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 import torch.nn.functional as F
+import torchvision
 import numpy as np
 import os
+from einops import rearrange
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 from jumping_quadrupeds.mae.networks import Actor, Critic, Encoder, MAE, ViT
 from jumping_quadrupeds.augs import RandomShiftsAug
@@ -183,13 +185,43 @@ class MAEAgent:
         return metrics
 
     def mae_update(self, obs):
-        metrics = dict()
         recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.encoder(obs, eval=False)
         self.encoder_opt.zero_grad()
         recon_loss.backward()
         self.encoder_opt.step()
-        metrics["mae_loss"] = recon_loss.cpu().item()
-        return metrics
+        gt_img, pred_img, gt_masked_img = self.render_reconstruction(pred_pixel_values[0],
+                                                                     patches[0],
+                                                                     masked_indices[0],
+                                                                     obs[0],
+                                                                     framestack=3) # TODO: get framestack from obs
+        return {"mae_loss": recon_loss.cpu().item(), "gt_img": gt_img, "pred_img": pred_img, "gt_masked_img": gt_masked_img}
+
+    def render_reconstruction(self, pred_pixel_values, patches, masked_indices, img, framestack=3, channels=3):
+        masked_patch_pred = pred_pixel_values.detach().cpu()
+        masked_patch_true = patches.cpu()
+
+        # tmp, TODO: remove this once dimensions are correct
+        masked_patch_true = rearrange(masked_patch_true, 'p (c s) -> (p s) c', s=framestack)
+        masked_patch_pred = rearrange(masked_patch_pred, 'p (c s) -> (p s) c', s=framestack)
+        
+        pred_patches = rearrange(masked_patch_pred, 'p (h w c) -> p c h w', c=channels, h=12, w=12)
+        gt_patches = rearrange(masked_patch_true, '(p s) (h w c) -> (p s) c h w', c=channels, h=12, w=12, s=framestack)
+
+        pred_recons = gt_patches.clone()
+        pred_w_mask = gt_patches.clone()
+
+        # TODO: remove mask repeat once dimensions match the gt
+        pred_recons[masked_indices.repeat(framestack)] = pred_patches
+        pred_w_mask[masked_indices.repeat(framestack)] = 0.
+
+        pred_recons = rearrange(pred_recons, '(s p1 p2) c h w -> s c (p1 h) (p2 w)', p1=7, p2=7, c=3, h=12, w=12, s=framestack)
+        pred_w_mask = rearrange(pred_w_mask, '(s p1 p2) c h w -> s c (p1 h) (p2 w)', p1=7, p2=7, c=3, h=12, w=12, s=framestack)
+
+        img = rearrange(img.cpu(), '(s c) h w -> s c h w', s=framestack)
+        gt_img = torchvision.utils.make_grid(img)
+        pred_img = torchvision.utils.make_grid(pred_recons.clip(0, 1), nrow=7)
+        gt_masked_img = torchvision.utils.make_grid(pred_w_mask, nrow=7 * framestack)
+        return gt_img, pred_img, gt_masked_img
 
     def update(self, replay_loader, step):
         metrics = dict()
