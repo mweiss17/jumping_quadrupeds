@@ -369,6 +369,13 @@ class MAE(nn.Module):
         return masked_indices, unmasked_indices, num_masked
 
     def forward(self, img, eval=True):
+        # breakpoint()
+        # TODO:
+        # 1. add temporal encoding
+        # 2. stack images along patch dimension
+        # 3. add masking options (next-frame prediction, all-frames prediction)
+        # 4. want to have a specific framestacking dimension (will make life easier in MAE) render_reconstruction
+
         if len(img.shape) == 3:
             img = img.unsqueeze(0)
         patches = self.to_patch(img)
