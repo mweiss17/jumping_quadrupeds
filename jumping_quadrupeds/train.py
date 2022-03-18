@@ -196,6 +196,9 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 metrics = self.compute_env_specific_metrics(metrics)
                 if self.get("use_wandb"):
                     self.wandb_log(**metrics)
+                    self.wandb_log_image('gt_img_viz', metrics['gt_img'])
+                    self.wandb_log_image('pred_img_viz', metrics['pred_img'])
+                    self.wandb_log_image('gt_masked_img_viz', metrics['gt_masked_img'])
 
             if self.checkpoint_now:
                 self.save(checkpoint_path=self.checkpoint_path)
