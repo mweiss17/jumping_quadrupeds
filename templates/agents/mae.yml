@@ -18,7 +18,7 @@ agent:
       start: 1.0
       end: 0.1
       num_steps: 500000
-    mask_strat: "all" # middle
+    mask_strat: "nfp" # "all" # middle
     mae_encoder_dim: 64
     mae_encoder_head_dim: 64
     mae_encoder_depth: 1
