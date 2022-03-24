@@ -250,19 +250,75 @@ class Transformer(nn.Module):
         return x
 
 
+class InputTokenizer(nn.Module):
+    @property
+    def output_dim(self):
+        raise NotImplementedError
+
+
+class SpatioTemporalTokenizer(InputTokenizer):
+    def __init__(
+        self,
+        obs_space,
+        dim,
+        patch_size,
+        channels,
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+        num_timesteps = obs_space.shape[0]
+        image_width = obs_space.shape[-1]
+        self.num_patches = (num_timesteps * image_width // patch_size) ** 2
+        self.patch_height, self.patch_width = pair(patch_size)
+
+        patch_dim = channels * self.patch_height * self.patch_width
+
+        self.vectorize = Rearrange("b c h w -> b (h w) c")
+        self.patchify = Rearrange("b c (h p1) (w p2) -> b (p1 p2 c) h w", p1=self.patch_height, p2=self.patch_width)
+        self.to_embedding = torch.nn.Linear(patch_dim, dim)
+        self.unpatchify = Rearrange("b (p1 p2 c) h w -> b c (h p1) (w p2)", p1=self.patch_height, p2=self.patch_width)
+        # self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
+        # self.to_patch_embedding = nn.Sequential(
+        #     Rearrange("b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=self.patch_height, p2=self.patch_width),
+        #     nn.Linear(patch_dim, dim),
+        # )
+
+    def output_dim(self):
+        return self.num_patches * self.repr_dim
+
+    def vit_positional_encoding(self, n, dim):
+        position = torch.arange(n, device=self.device).unsqueeze(1)
+        div_term_even = torch.exp(torch.arange(0, dim, 2, device=self.device) * (-math.log(10000.0) / dim))
+        div_term_odd = torch.exp(torch.arange(1, dim, 2, device=self.device) * (-math.log(10000.0) / dim))
+        pe = torch.zeros(n, 1, dim, device=self.device)
+        pe[:, 0, 0::2] = torch.sin(position * div_term_even)
+        pe[:, 0, 1::2] = torch.cos(position * div_term_odd)
+        return pe.transpose(0, 1)
+
+    def forward(self, x):
+        x = self.vectorize(x)
+        x = self.patchify(x)
+        x = self.to_embedding(x)
+        b, n, c = x.shape
+
+        cls_tokens = repeat(self.cls_token, "() n d -> b n d", b=b)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.vit_positional_encoding((n + 1), c)  # [:, : (n + 1)]
+
+        return x
+
+
 class ViT(nn.Module):
     def __init__(
         self,
         *,
-        image_size,
-        patch_size,
-        num_classes,
+        obs_space,
+        tokenizer,
         dim,
         depth,
         heads,
         mlp_dim,
-        pool="cls",
-        channels=3,
         dim_head=64,
         dropout=0.0,
         emb_dropout=0.0,
@@ -272,50 +328,22 @@ class ViT(nn.Module):
     ):
         super().__init__()
         self.dim = dim
-        image_height, image_width = pair(image_size)
-        patch_height, patch_width = pair(patch_size)
-
-        assert (
-            image_height % patch_height == 0 and image_width % patch_width == 0
-        ), "Image dimensions must be divisible by the patch size."
-
-        num_patches = (image_height // patch_height) * (image_width // patch_width)
-        patch_dim = channels * patch_height * patch_width
-        assert pool in {"cls", "mean"}, "pool type must be either cls (cls token) or mean (mean pooling)"
-
-        self.to_patch_embedding = nn.Sequential(
-            Rearrange("b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=patch_height, p2=patch_width),
-            nn.Linear(patch_dim, dim),
-        )
-
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+        self.obs_space = obs_space
+        self.tokenizer = tokenizer
         self.dropout = nn.Dropout(emb_dropout)
 
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout, encoder_nonlinearity, qkv_bias)
 
-        self.pool = pool
-        self.to_latent = nn.Identity()
         if use_last_ln:
-            self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
+            self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, patch_dim))
         else:
-            self.mlp_head = nn.Sequential(nn.Linear(dim, num_classes))
+            self.mlp_head = nn.Sequential(nn.Linear(dim, patch_dim))
 
-    def forward(self, imgs):
-        x = self.to_patch_embedding(imgs)
-        b, s, n, _ = x.shape
-
-        cls_tokens = repeat(self.cls_token, "() n d -> b n d", b=b)
-        x = torch.cat((cls_tokens, x), dim=1)
-        x += self.pos_embedding[:, : (n + 1)]
+    def forward(self, x):
+        x = self.tokenizer(x)
         x = self.dropout(x)
-
         x = self.transformer(x)
-
-        x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
-
-        x = self.to_latent(x)
-        return self.mlp_head(x)
+        return x
 
 
 class MAE(nn.Module):
@@ -336,16 +364,14 @@ class MAE(nn.Module):
         self.masking_ratio = masking_ratio
         self.mask_strat = mask_strat
         self.device = device
+
         # extract some hyperparameters and functions from encoder (vision transformer to be trained)
 
         self.encoder = encoder
-        self.repr_dim = 49 * self.encoder.dim
-        num_patches, encoder_dim = encoder.pos_embedding.shape[-2:]
-        self.to_patch, self.patch_to_emb = encoder.to_patch_embedding[:2]
-        pixel_values_per_patch = self.patch_to_emb.weight.shape[-1]
-        # decoder parameters
+        self.repr_dim = self.encoder.dim  # num_patches * self.encoder.dim
 
-        self.enc_to_dec = nn.Linear(encoder_dim, decoder_dim) if encoder_dim != decoder_dim else nn.Identity()
+        # decoder parameters
+        self.enc_to_dec = nn.Linear(self.encoder.dim, decoder_dim) if self.encoder.dim != decoder_dim else nn.Identity()
         self.mask_token = nn.Parameter(torch.randn(decoder_dim))
         self.decoder = Transformer(
             dim=decoder_dim,
@@ -354,21 +380,21 @@ class MAE(nn.Module):
             dim_head=decoder_dim_head,
             mlp_dim=decoder_dim * 4,
         )
-        self.decoder_pos_emb = nn.Embedding(num_patches, decoder_dim)
-        self.to_pixels = nn.Linear(decoder_dim, pixel_values_per_patch)
 
-    def compute_masks(self, eval, num_patches, batch):
+        self.decoder_pos_emb = nn.Embedding(self.encoder.tokenizer.num_patches, decoder_dim)
+
+    def compute_masks(self, eval, batch):
         if eval:
             masked_indices = torch.arange(0, device=self.device)
-            unmasked_indices = torch.arange(num_patches, device=self.device)
+            unmasked_indices = torch.arange(self.num_patches, device=self.device)
             num_masked = 0
         elif self.mask_strat == "all":
-            num_masked = int(self.masking_ratio * num_patches)
-            rand_indices = torch.rand(batch, num_patches, device=self.device).argsort(dim=-1)
+            num_masked = int(self.masking_ratio * self.num_patches)
+            rand_indices = torch.rand(batch, self.num_patches, device=self.device).argsort(dim=-1)
             masked_indices, unmasked_indices = rand_indices[:, :num_masked], rand_indices[:, num_masked:]
         return masked_indices, unmasked_indices, num_masked
 
-    def forward(self, img, eval=True):
+    def forward(self, batch, eval=True):
         # breakpoint()
         # TODO:
         # 1. add temporal encoding
@@ -376,20 +402,20 @@ class MAE(nn.Module):
         # 3. add masking options (next-frame prediction, all-frames prediction)
         # 4. want to have a specific framestacking dimension (will make life easier in MAE) render_reconstruction
 
-        if len(img.shape) == 3:
-            img = img.unsqueeze(0)
-        patches = self.to_patch(img)
-        batch, num_patches, *_ = patches.shape
-
-        # patch to encoder tokens and add positions
-        tokens = self.patch_to_emb(patches)
-        tokens = tokens + self.encoder.pos_embedding[:, 1 : (num_patches + 1)]
-
+        if len(batch.shape) == 4:
+            batch = batch.unsqueeze(0)
+        # patches = self.to_patch(img)
+        # batch, num_patches, *_ = patches.shape
+        #
+        # # patch to encoder tokens and add positions
+        # tokens = self.patch_to_emb(patches)
+        # tokens = tokens + self.encoder.pos_embedding[:, 1 : (num_patches + 1)]
+        breakpoint()
         # calculate of patches needed to be masked, and get random indices, dividing it up for mask vs unmasked
-        masked_indices, unmasked_indices, num_masked = self.compute_masks(eval, num_patches, batch)
+        masked_indices, unmasked_indices, num_masked = self.compute_masks(eval, batch.shape[0])
 
         # get the unmasked tokens to be encoded
-        batch_range = torch.arange(batch, device=self.device)[:, None]
+        batch_range = torch.arange(batch.shape[0], device=self.device)[:, None]
         tokens = tokens[batch_range, unmasked_indices]
 
         # get the patches to be masked for the final reconstruction loss
@@ -397,6 +423,12 @@ class MAE(nn.Module):
 
         # attend with vision transformer
         encoded_tokens = self.encoder.transformer(tokens)
+        breakpoint()
+
+        # use for control stuff
+        global_code = encoded_tokens[:, 0]
+
+        patches = self.mlp_head(encoded_tokens)
 
         # If we're in eval mode, we just return the encoded image
         if eval:
@@ -421,6 +453,5 @@ class MAE(nn.Module):
         pred_pixel_values = self.to_pixels(mask_tokens)
 
         # calculate reconstruction loss
-
         recon_loss = F.mse_loss(pred_pixel_values, masked_patches)
         return recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches
