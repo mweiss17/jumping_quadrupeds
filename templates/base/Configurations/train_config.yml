@@ -12,4 +12,4 @@ use_wandb: True
 seed: 1 # (int): random seed
 total_steps: 1000000 # (int): total steps to run the experiment
 save_freq: 100000 # (int): save policy every n steps
-
+num_seed_frames: 4000

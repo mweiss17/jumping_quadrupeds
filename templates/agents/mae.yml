@@ -1,45 +1,67 @@
+num_seed_frames: 1000
+
 ### MAE Agent Base Configuration ###
 agent:
+  cls: MAEAgent
   name: mae
   kwargs:
     lr: 1e-4
     critic_lr: 1e-4 # null
-    encoder_lr: 1e-4
+    model_lr: 1e-4
     critic_target_tau: 0.01 # 0.01 default
     num_expl_steps: 2000
     hidden_dim: 1024
     feature_dim: 50
     stddev_clip: 0.3
-    num_seed_frames: 1000 #4000
     update_every_steps: 2
     log_std_init: null # exp(-.5) = .6 set to null to disable
+    weight_decay: 0.01
+    use_actor_ln: True
+
     stddev_schedule:
       name: linear
       start: 1.0
       end: 0.1
       num_steps: 500000
-    mask_strat: "nfp" # "all" # middle
-    mae_encoder_dim: 64
-    mae_encoder_head_dim: 64
-    mae_encoder_depth: 1
-    mae_encoder_heads: 1
-    mae_encoder_mlp_dim: 128  # 2048
-    mae_encoder_dropout: 0.0
-    mae_encoder_emb_dropout: 0.0
-    mae_encoder_nonlinearity: "geglu"
-    mae_encoder_qkv_bias: False
-    mae_encoder_use_last_ln: True
-    mae_decoder_dim: 256 #64 * nheads
-    mae_decoder_depth: 1
-    mae_decoder_dim_head: 64
-    mae_decoder_heads: 4
-    use_actor_ln: True
-    weight_decay: 0.01
+
+decoder:
+  cls: ViT
+  kwargs:
+    dim: 256 #64 * nheads
+    depth: 1
+    head_dim: 64
+    heads: 4
+    mlp_dim: 1024 # dim * 4
+
+
+encoder:
+  cls: ViT
+  kwargs:
+    dim: 64
+    head_dim: 64
+    depth: 1
+    heads: 1
+    mlp_dim: 128  # 2048
+    dropout: 0.0
+    emb_dropout: 0.0
+    nonlinearity: "geglu"
+    qkv_bias: False
+
+tokenizer:
+  cls: "SpatioTemporalTokenizer"
+  kwargs:
+    patch_size: 12
+
+model:
+  cls: "SequentialMaskedAutoEncoder"
+  kwargs:
+    use_last_ln: True
+
 
 ### Off-Policy Buffer Configuration ###
 buffer:
   kwargs:
-    type: "off-policy"
+    buffer_type: "off-policy"
     max_size:  1000000
     nstep: 3
     batch_size: 256

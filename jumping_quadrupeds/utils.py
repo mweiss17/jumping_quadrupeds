@@ -1,24 +1,24 @@
 import os
-import re
 import random
-import torch
-import argparse
+import re
+from collections import namedtuple
+from typing import TypeVar, Iterator, List
+
 import numpy as np
+import torch
 import torch.nn as nn
-from typing import TypeVar, Generic, Iterable, Iterator, Sequence, List, Optional, Tuple
-from torchvision.transforms import transforms
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
-from collections import defaultdict, namedtuple
+from torch.utils.data import IterableDataset
+from torchvision.transforms import transforms
+
 from jumping_quadrupeds.buffer import OffPolicyReplayBuffer
 from jumping_quadrupeds.ppo.buffer import OnPolicyReplayBuffer
-from torch.utils.data import IterableDataset
+
+# from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
 
 T_co = TypeVar("T_co", covariant=True)
-
-
 DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
-### FILE ADAPTED FROM OPENAI SPINNINGUP, https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo
 
 
 def schedule(schdl, step, log_std):
@@ -178,34 +178,38 @@ class BufferedShuffleDataset(IterableDataset[T_co]):
             yield buf.pop()
 
 
-def buffer_loader_factory(type=None, batch_size=None, **kwargs):
+def buffer_loader_factory(buffer_type=None, batch_size=None, **kwargs):
     def _worker_init_fn(worker_id):
         seed = np.random.get_state()[1][0] + worker_id
         np.random.seed(seed)
         random.seed(seed)
 
-    if type == "on-policy":
+    if buffer_type == "on-policy":
         buffer = OnPolicyReplayBuffer(**kwargs)
         buffer_size = batch_size
-    elif type == "off-policy":
+    elif buffer_type == "off-policy":
         buffer = OffPolicyReplayBuffer(**kwargs)
         buffer_size = batch_size * kwargs.get("num_workers")
-    elif type == "off-policy-sequential":
+    elif buffer_type == "off-policy-sequential":
         buffer = OffPolicySequentialReplayBuffer(**kwargs)
         buffer_size = batch_size * kwargs.get("num_workers")
 
     else:
         raise ValueError(
-            f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
+            f"Unknown replay buffer name: {buffer_type}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
         )
-    if type == "off-policy":
+    if buffer_type == "off-policy":
         buffer = BufferedShuffleDataset(buffer, buffer_size=buffer_size)
 
     loader = torch.utils.data.DataLoader(
         buffer,
         batch_size=batch_size,
         num_workers=kwargs.get("num_workers"),
-        pin_memory=True,
         worker_init_fn=_worker_init_fn,
+        pin_memory=True,
     )
     return loader
+
+
+def pair(t):
+    return t if isinstance(t, tuple) else (t, t)

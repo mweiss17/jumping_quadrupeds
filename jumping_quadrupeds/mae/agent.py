@@ -2,26 +2,26 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
-import numpy as np
-import os
 from einops import rearrange
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
-from jumping_quadrupeds.mae.networks import Actor, Critic, Encoder, MAE, ViT
+
 from jumping_quadrupeds.augs import RandomShiftsAug
+from jumping_quadrupeds.mae.networks import Actor, Critic
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 
 
 class MAEAgent:
     def __init__(
         self,
-        obs_space,
         action_space,
+        model,
         device,
         lr,
         critic_lr,
-        encoder_lr,
+        model_lr,
         feature_dim,
         hidden_dim,
         critic_target_tau,
@@ -30,25 +30,8 @@ class MAEAgent:
         stddev_schedule,
         stddev_clip,
         log_std_init,
-        patch_size=12,
-        mae_encoder_dim=256,
-        mae_encoder_head_dim=64,
-        mae_encoder_depth=2,
-        mae_encoder_heads=8,
-        mae_encoder_mlp_dim=512,
-        mae_encoder_dropout=0.1,
-        mae_encoder_emb_dropout=0.1,
-        mae_encoder_nonlinearity="gelu",
-        mae_encoder_use_last_ln=True,
-        mae_encoder_qkv_bias=False,
-        mae_masking_ratio=0.75,
-        mae_decoder_dim=512,
-        mae_decoder_depth=2,
-        mae_decoder_heads=1,
-        mae_decoder_dim_head=128,
         use_actor_ln=True,
         weight_decay=0.01,
-        **kwargs,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -57,43 +40,17 @@ class MAEAgent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
-        vit = ViT(
-            obs_space=obs_space,
-            tokenizer=tokenizer,
-            dim=mae_encoder_dim,
-            dim_head=mae_encoder_head_dim,
-            depth=mae_encoder_depth,
-            heads=mae_encoder_heads,
-            mlp_dim=mae_encoder_mlp_dim,
-            dropout=mae_encoder_dropout,
-            emb_dropout=mae_encoder_emb_dropout,
-            encoder_nonlinearity=mae_encoder_nonlinearity,
-            use_last_ln=mae_encoder_use_last_ln,
-            qkv_bias=mae_encoder_qkv_bias,
-        ).to(device)
-        mae = MAE(
-            encoder=vit,
-            patch_size=patch_size,
-            masking_ratio=mae_masking_ratio,  # the paper recommended 75% masked patches
-            decoder_dim=mae_decoder_dim,  # paper showed good results with just 512
-            decoder_depth=mae_decoder_depth,  # anywhere from 1 to 8
-            decoder_dim_head=mae_decoder_dim_head,
-            decoder_heads=mae_decoder_heads,
-            device=device,
-        )
 
         # models
-        self.encoder = mae.to(device)
-        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(
-            device
-        )
+        self.model = model.to(device)
+        self.actor = Actor(self.model.dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(device)
 
-        self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
+        self.critic = Critic(self.model.dim, action_space, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.model.dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
-        self.encoder_opt = torch.optim.AdamW(self.encoder.parameters(), lr=encoder_lr, weight_decay=weight_decay)
+        self.model_opt = torch.optim.AdamW(self.model.parameters(), lr=model_lr, weight_decay=weight_decay)
         self.actor_opt = torch.optim.AdamW(self.actor.parameters(), lr=lr, weight_decay=weight_decay)
         self.critic_opt = torch.optim.AdamW(
             self.critic.parameters(), lr=critic_lr if critic_lr else lr, weight_decay=weight_decay
@@ -107,13 +64,13 @@ class MAEAgent:
 
     def train(self, training=True):
         self.training = training
-        self.encoder.train(training)
+        self.model.train(training)
         self.actor.train(training)
         self.critic.train(training)
 
     def act(self, obs, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
-        obs = self.encoder(obs)
+        obs = self.model(obs)
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
 
         dist = self.actor(obs, stddev)
@@ -150,12 +107,12 @@ class MAEAgent:
             stddev.item() if stddev is not None else self.actor.log_std.detach().cpu().numpy()
         )
 
-        # optimize encoder and critic
-        self.encoder_opt.zero_grad(set_to_none=True)
+        # optimize model and critic
+        self.model_opt.zero_grad(set_to_none=True)
         self.critic_opt.zero_grad(set_to_none=True)
         critic_loss.backward()
         self.critic_opt.step()
-        self.encoder_opt.step()
+        self.model_opt.step()
 
         return metrics
 
@@ -184,10 +141,10 @@ class MAEAgent:
         return metrics
 
     def mae_update(self, obs):
-        recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.encoder(obs, eval=False)
-        self.encoder_opt.zero_grad()
+        recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.model(obs, eval=False)
+        self.model_opt.zero_grad()
         recon_loss.backward()
-        self.encoder_opt.step()
+        self.model_opt.step()
         gt_img, pred_img, gt_masked_img = self.render_reconstruction(
             pred_pixel_values[0], patches[0], masked_indices[0], obs[0], framestack=3
         )  # TODO: get framestack from obs
@@ -236,7 +193,7 @@ class MAEAgent:
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
 
-        # update encoder
+        # update model
         # if step % 5 == 0:
         metrics.update(self.mae_update(obs))
 
@@ -245,9 +202,9 @@ class MAEAgent:
         next_obs = self.aug(next_obs)
 
         # encode
-        obs = self.encoder(obs)
+        obs = self.model(obs)
         with torch.no_grad():
-            next_obs = self.encoder(next_obs)
+            next_obs = self.model(next_obs)
 
         metrics["batch_reward"] = reward.mean().item()
         # update critic
@@ -266,8 +223,8 @@ class MAEAgent:
             "actor": self.actor.state_dict(),
             "critic": self.critic.state_dict(),
             "critic_target": self.critic_target.state_dict(),
-            "encoder": self.encoder.state_dict(),
-            "encoder_opt": self.encoder_opt.state_dict(),
+            "model": self.model.state_dict(),
+            "model_opt": self.model_opt.state_dict(),
             "actor_opt": self.actor_opt.state_dict(),
             "critic_opt": self.critic_opt.state_dict(),
         }
@@ -279,7 +236,7 @@ class MAEAgent:
         self.actor.load_state_dict(checkpoint["actor"])
         self.critic.load_state_dict(checkpoint["critic"])
         self.critic_target.load_state_dict(checkpoint["critic_target"])
-        self.encoder.load_state_dict(checkpoint["encoder"])
-        self.encoder_opt.load_state_dict(checkpoint["encoder_opt"])
+        self.model.load_state_dict(checkpoint["model"])
+        self.model_opt.load_state_dict(checkpoint["model_opt"])
         self.actor_opt.load_state_dict(checkpoint["actor_opt"])
         self.critic_opt.load_state_dict(checkpoint["critic_opt"])
