@@ -222,84 +222,110 @@ class SequentialMaskedAutoEncoder(nn.Module):
         encoder,
         decoder,
         masking_ratio=0.75,
-        use_last_ln=False,
         device=None,
+        use_cls_token=False,
+        use_last_ln=False,
+        mask_type="random",
     ):
         super().__init__()
         assert masking_ratio > 0 and masking_ratio < 1, "masking ratio must be kept between 0 and 1"
         self.masking_ratio = masking_ratio
+        self.mask_type = mask_type
         self.device = device
 
         # extract some hyperparameters and functions from encoder (vision transformer to be trained)
         self.tokenizer = tokenizer
 
-        self.encoder = encoder
-        self.decoder = decoder
-        self.dim = self.encoder.dim
-        # decoder parameters
-        self.enc_to_dec = nn.Linear(self.dim, self.decoder.dim) if self.dim != self.decoder.dim else nn.Identity()
-        self.mask_token = nn.Parameter(torch.randn(self.decoder.dim))
+        self.enc = encoder
+        self.dec = decoder
 
-        self.decoder_pos_emb = nn.Embedding(self.tokenizer.num_patches, self.decoder.dim)
+        # decoder parameters
+        self.enc_to_dec = nn.Linear(self.enc.dim + 3, self.dec.dim) if self.enc.dim != self.dec.dim else nn.Identity()
+
+        self.mask_token = nn.Parameter(torch.randn(self.dec.dim))
+
         self.total_num_patches = (self.tokenizer.num_patches**2) * self.tokenizer.num_timesteps
+        self.dec_pos_emb = nn.Embedding(self.total_num_patches, self.dec.dim)
+
+        # We can optionally use the cls token as input to the actor and critic
+        self.use_cls_token = use_cls_token
+        if self.use_cls_token:
+            self.out_dim = self.enc.dim
+        else:
+            self.out_dim = int((1 - self.masking_ratio) * self.total_num_patches + 1) * self.enc.dim
 
         if use_last_ln:
-            self.mlp_head = nn.Sequential(nn.LayerNorm(self.dim), nn.Linear(self.dim, self.tokenizer.patch_dim))
+            self.from_embedding = nn.Sequential(
+                nn.LayerNorm(self.dec.dim), nn.Linear(self.dec.dim, self.tokenizer.patch_dim)
+            )
         else:
-            self.mlp_head = nn.Sequential(nn.Linear(self.dim, self.tokenizer.patch_dim))
+            self.from_embedding = nn.Sequential(nn.Linear(self.dec.dim, self.tokenizer.patch_dim))
 
-    def compute_masks(self, batch_size):
-        num_masked = int(self.masking_ratio * self.total_num_patches)
-        rand_indices = torch.rand(batch_size, self.total_num_patches, device=self.device).argsort(dim=-1)
-        masked_indices, unmasked_indices = rand_indices[:, :num_masked], rand_indices[:, num_masked:]
+    def compute_masks(self, batch_size, seq_len):
+        if self.mask_type == "random":
+            num_masked = int(self.masking_ratio * self.total_num_patches)
+            rand_indices = torch.rand(batch_size, self.total_num_patches, device=self.device).argsort(dim=-1)
+            masked_indices, unmasked_indices = rand_indices[:, :num_masked], rand_indices[:, num_masked:]
+        elif self.mask_type == "next_frame":
+            num_masked = self.total_num_patches // seq_len
+            indices = torch.arange(0, self.total_num_patches, device=self.device).repeat(batch_size, 1)
+            unmasked_indices = indices[:, : self.total_num_patches - num_masked]
+            masked_indices = indices[:, self.total_num_patches - num_masked :]
+        else:
+            raise ValueError("invalid mask type")
         return masked_indices, unmasked_indices, num_masked
 
-    def forward(self, batch, eval=True):
+    def forward(self, input, action=None):
+        # input: (batch_size, num_timesteps, c, h ,w)
+        if len(input.shape) == 4:
+            input = input.unsqueeze(0)
 
-        tokens = self.tokenizer(batch)
+        masked_indices, unmasked_indices, num_masked = self.compute_masks(
+            batch_size=input.shape[0], seq_len=input.shape[1]
+        )
 
-        b, p, d = tokens.shape
+        patches = self.tokenizer.patchify(input)
+
+        tokens = self.tokenizer(patches)
 
         # calculate of patches needed to be masked, and get random indices, dividing it up for mask vs unmasked
-        masked_indices, unmasked_indices, num_masked = self.compute_masks(b)
-
         # get the unmasked tokens to be encoded
-        batch_range = torch.arange(b, device=self.device)[:, None]
+        batch_range = torch.arange(input.shape[0], device=self.device)[:, None]
         unmasked_tokens = tokens[batch_range, unmasked_indices]
 
         # get the patches to be masked for the final reconstruction loss
-        masked_tokens = tokens[batch_range, masked_indices]
-        breakpoint()
+        masked_patches = patches[batch_range, masked_indices]
 
         # attend with vision transformer
-        encoded_tokens = self.encoder(unmasked_tokens)
+        encoded_tokens = self.enc(unmasked_tokens)
 
-        # use for control stuff
-        global_code = encoded_tokens[:, 0]
+        # Return an embedding for control
+        if action is None:
+            if self.use_cls_token:
+                return encoded_tokens[:, 0]
+            else:
+                return encoded_tokens
 
-        patches = self.mlp_head(encoded_tokens)
-
-        # If we're in eval mode, we just return the encoded image
-        if eval:
-            return encoded_tokens.view(encoded_tokens.shape[0], -1)
-
+        action = repeat(action, "b c -> b t c", t=encoded_tokens.shape[1])
+        encoded_tokens = torch.cat((encoded_tokens, action), dim=-1)
         # project encoder to decoder dimensions, if they are not equal - the paper says you can get away with a smaller dimension for decoder
         decoder_tokens = self.enc_to_dec(encoded_tokens)
 
         # reapply decoder position embedding to unmasked tokens
-        decoder_tokens = decoder_tokens + self.decoder_pos_emb(unmasked_indices)
+        decoder_tokens = decoder_tokens + self.dec_pos_emb(unmasked_indices)
 
         # repeat mask tokens for number of masked, and add the positions using the masked indices derived above
-        mask_tokens = repeat(self.mask_token, "d -> b n d", b=batch, n=num_masked)
-        mask_tokens = mask_tokens + self.decoder_pos_emb(masked_indices)
+        mask_tokens = repeat(self.mask_token, "d -> b n d", b=input.shape[0], n=num_masked)
+
+        mask_tokens = mask_tokens + self.dec_pos_emb(masked_indices)
 
         # concat the masked tokens to the decoder tokens and attend with decoder
         decoder_tokens = torch.cat((mask_tokens, decoder_tokens), dim=1)
-        decoded_tokens = self.decoder(decoder_tokens)
+        decoded_tokens = self.dec(decoder_tokens)
 
         # splice out the mask tokens and project to pixel values
         mask_tokens = decoded_tokens[:, :num_masked]
-        pred_pixel_values = self.to_pixels(mask_tokens)
+        pred_pixel_values = self.from_embedding(mask_tokens)
 
         # calculate reconstruction loss
         recon_loss = F.mse_loss(pred_pixel_values, masked_patches)

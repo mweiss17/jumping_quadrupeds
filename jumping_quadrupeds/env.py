@@ -77,8 +77,12 @@ class VideoWrapper(gym.Wrapper):
         state, reward, done, info = self.env.step(action)
 
         if self.episode_no + 1 == self.render_every_n_episodes:
-            # frame = np.copy(self.envs.render(render_type))
-            self.episode_images.append(np.copy(state))
+
+            if len(state.shape) == 4:
+                frame = state[0]
+            else:
+                frame = state
+            self.episode_images.append(np.copy(frame))
 
         return state, reward, done, info
 
@@ -236,6 +240,27 @@ class ExtendedTimeStepWrapper(dm_env.Environment):
         return getattr(self._env, name)
 
 
+class FrameSkipEnv(gym.Wrapper):
+    def __init__(self, env=None, skip=4):
+        super(FrameSkipEnv, self).__init__(env)
+        self._skip = skip
+
+    def step(self, action):
+        total_reward = 0.0
+        done = None
+        for _ in range(self._skip):
+            # Take a step
+            obs, reward, done, info = self.env.step(action)
+            # Update the total reward by summing the (reward obtained from the step taken) + (the current
+            # total reward)
+            total_reward += reward
+            # If the game ends, break the for loop
+            if done:
+                break
+
+        return obs, total_reward, done, info
+
+
 def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, render_every=None, **kwargs):
     if "Duckietown" in name:
         import gym_duckietown
@@ -257,6 +282,7 @@ def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, ren
         env_name = name[4:]
         env = gym.make(env_name)
         env = ResizeWrapper(PyTorchObsWrapper(env), resize_w=w, resize_h=h)
+        env = FrameSkipEnv(env, skip=action_repeat)
     else:
         raise ValueError(f"Unknown environment name: {name}.")
     env = ActionScale(env, new_min=-1.0, new_max=1.0)

@@ -43,10 +43,12 @@ class MAEAgent:
 
         # models
         self.model = model.to(device)
-        self.actor = Actor(self.model.dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(device)
+        self.actor = Actor(self.model.out_dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(
+            device
+        )
 
-        self.critic = Critic(self.model.dim, action_space, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.model.dim, action_space, feature_dim, hidden_dim).to(device)
+        self.critic = Critic(self.model.out_dim, action_space, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.model.out_dim, action_space, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
@@ -140,13 +142,13 @@ class MAEAgent:
         metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
         return metrics
 
-    def mae_update(self, obs):
-        recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.model(obs, eval=False)
+    def mae_update(self, obs, action):
+        recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.model(obs, action=action)
         self.model_opt.zero_grad()
         recon_loss.backward()
         self.model_opt.step()
         gt_img, pred_img, gt_masked_img = self.render_reconstruction(
-            pred_pixel_values[0], patches[0], masked_indices[0], obs[0], framestack=3
+            pred_pixel_values[0], patches[0], masked_indices[0], obs[0], seq_len=3
         )  # TODO: get framestack from obs
         return {
             "mae_loss": recon_loss.cpu().item(),
@@ -155,35 +157,27 @@ class MAEAgent:
             "gt_masked_img": gt_masked_img,
         }
 
-    def render_reconstruction(self, pred_pixel_values, patches, masked_indices, img, framestack=3, channels=3):
-        masked_patch_pred = pred_pixel_values.detach().cpu()
-        masked_patch_true = patches.cpu()
+    def render_reconstruction(self, pred_pixel_values, patches, masked_indices, img, seq_len=3, channels=3):
+        pred_patches = pred_pixel_values.detach().cpu()
+        patches = patches.cpu()
 
-        # tmp, TODO: remove this once dimensions are correct
-        masked_patch_true = rearrange(masked_patch_true, "p (c s) -> (p s) c", s=framestack)
-        masked_patch_pred = rearrange(masked_patch_pred, "p (c s) -> (p s) c", s=framestack)
-
-        pred_patches = rearrange(masked_patch_pred, "p (h w c) -> p c h w", c=channels, h=12, w=12)
-        gt_patches = rearrange(masked_patch_true, "(p s) (h w c) -> (p s) c h w", c=channels, h=12, w=12, s=framestack)
-
+        pred_patches = rearrange(pred_patches, "p (h w c) -> p c h w", c=channels, h=12, w=12)
+        gt_patches = rearrange(patches, "p (h w c) -> p c h w", c=channels, h=12, w=12)
         pred_recons = gt_patches.clone()
         pred_w_mask = gt_patches.clone()
 
-        # TODO: remove mask repeat once dimensions match the gt
-        pred_recons[masked_indices.repeat(framestack)] = pred_patches
-        pred_w_mask[masked_indices.repeat(framestack)] = 0.0
+        pred_recons[masked_indices] = pred_patches
+        pred_w_mask[masked_indices] = 0.0
 
         pred_recons = rearrange(
-            pred_recons, "(s p1 p2) c h w -> s c (p1 h) (p2 w)", p1=7, p2=7, c=3, h=12, w=12, s=framestack
+            pred_recons, "(s p1 p2) c h w -> s c (p1 h) (p2 w)", p1=7, p2=7, c=3, h=12, w=12, s=seq_len
         )
         pred_w_mask = rearrange(
-            pred_w_mask, "(s p1 p2) c h w -> s c (p1 h) (p2 w)", p1=7, p2=7, c=3, h=12, w=12, s=framestack
+            pred_w_mask, "(s p1 p2) c h w -> s c (p1 h) (p2 w)", p1=7, p2=7, c=3, h=12, w=12, s=seq_len
         )
-
-        img = rearrange(img.cpu(), "(s c) h w -> s c h w", s=framestack)
         gt_img = torchvision.utils.make_grid(img)
-        pred_img = torchvision.utils.make_grid(pred_recons.clip(0, 1), nrow=7)
-        gt_masked_img = torchvision.utils.make_grid(pred_w_mask, nrow=7 * framestack)
+        pred_img = torchvision.utils.make_grid(pred_recons)  # 7
+        gt_masked_img = torchvision.utils.make_grid(pred_w_mask)  # 7 * framestack)
         return gt_img, pred_img, gt_masked_img
 
     def update(self, replay_loader, step):
@@ -195,11 +189,20 @@ class MAEAgent:
 
         # update model
         # if step % 5 == 0:
-        metrics.update(self.mae_update(obs))
+        metrics.update(self.mae_update(obs, action))
+        batch_size = obs.shape[0]
+
+        # fold the batch in
+        obs = rearrange(obs, "b t c h w -> (b t) c h w")
+        next_obs = rearrange(next_obs, "b t c h w -> (b t) c h w")
 
         # augment
         obs = self.aug(obs)
         next_obs = self.aug(next_obs)
+
+        # expand the timesteps back out
+        obs = rearrange(obs, "(b t) c h w -> b t c h w", b=batch_size)
+        next_obs = rearrange(next_obs, "(b t) c h w -> b t c h w", b=batch_size)
 
         # encode
         obs = self.model(obs)

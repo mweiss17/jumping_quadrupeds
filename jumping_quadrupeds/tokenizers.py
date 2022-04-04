@@ -3,6 +3,8 @@ import math
 import torch
 from einops import repeat
 from einops.layers.torch import Rearrange
+from einops import rearrange
+
 from torch import nn
 
 from jumping_quadrupeds.utils import pair
@@ -31,16 +33,12 @@ class SpatioTemporalTokenizer(InputTokenizer):
 
         self.patch_dim = channels * self.patch_height * self.patch_width
         self.patchify = Rearrange(
-            "b t c (h p1) (w p2) -> b (t p1 p2) (c h w)",
-            p1=self.num_patches,
-            p2=self.num_patches,
-            t=self.num_timesteps,
+            "b s c (p1 h) (p2 w) -> b (s p1 p2) (h w c)",
             h=self.patch_height,
             w=self.patch_width,
+            s=self.num_timesteps,
         )
         self.to_embedding = torch.nn.Linear(self.patch_dim, dim)
-        self.unpatchify = Rearrange("b (p1 p2 c) h w -> b c (h p1) (w p2)", p1=self.patch_height, p2=self.patch_width)
-        # self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
 
     def output_dim(self):
         return self.num_patches * self.repr_dim
@@ -55,10 +53,6 @@ class SpatioTemporalTokenizer(InputTokenizer):
         return pe.transpose(0, 1)
 
     def forward(self, x):
-        if len(x.shape) == 4:
-            x = x.unsqueeze(0)
-
-        x = self.patchify(x)
         x = self.to_embedding(x)
         b, n, c = x.shape
 

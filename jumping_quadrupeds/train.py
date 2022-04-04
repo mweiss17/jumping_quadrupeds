@@ -35,7 +35,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self.ep_idx = 0
         self.episode_returns = []
 
@@ -230,12 +230,15 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
             if self.update_now:
                 metrics = self.agent.update(self.replay_iter, self.step)
-                metrics = self.compute_env_specific_metrics(metrics)
-                if self.get("use_wandb"):
-                    self.wandb_log(**metrics)
+                if self.get("use_wandb") and (self.step % self.get("log_every")) == 0:
+                    metrics = self.compute_env_specific_metrics(metrics)
                     self.wandb_log_image("gt_img_viz", metrics["gt_img"])
                     self.wandb_log_image("pred_img_viz", metrics["pred_img"])
                     self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])
+                    del metrics["gt_img"]
+                    del metrics["pred_img"]
+                    del metrics["gt_masked_img"]
+                    self.wandb_log(**metrics)
 
             if self.checkpoint_now:
                 self.save(checkpoint_path=self.checkpoint_path)
