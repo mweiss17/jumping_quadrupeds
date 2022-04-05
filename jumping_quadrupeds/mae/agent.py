@@ -32,6 +32,7 @@ class MAEAgent:
         log_std_init,
         use_actor_ln=True,
         weight_decay=0.01,
+        critic_mask_aug=False,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -40,6 +41,7 @@ class MAEAgent:
         self.stddev_schedule = stddev_schedule
         self.stddev_clip = stddev_clip
         self.log_std_init = log_std_init
+        self.critic_mask_aug = critic_mask_aug
 
         # models
         self.model = model.to(device)
@@ -87,7 +89,7 @@ class MAEAgent:
         action = action.detach().cpu().numpy()[0]
         return action, value, log_p
 
-    def update_critic(self, obs, action, reward, discount, next_obs, step):
+    def update_critic(self, obs, action, reward, discount, next_obs, step, obs_aug=None, next_obs_aug=None):
         metrics = dict()
 
         with torch.no_grad():
@@ -99,9 +101,23 @@ class MAEAgent:
             target_Q = reward + (discount * target_V)
 
         Q1, Q2 = self.critic(obs, action)
+        if obs_aug is not None:
+            Q1_aug, Q2_aug = self.critic(obs_aug, action)
+            with torch.no_grad():
+                approximation_error = F.l1_loss(Q1, Q1_aug) + F.l1_loss(Q2, Q2_aug)
+                metrics["critic_q1_aug_std"] = Q1_aug.std().item()
+                metrics["critic_q2_aug_std"] = Q2_aug.std().item()
+                metrics["critic_q1_aug"] = Q1_aug.mean().item()
+                metrics["critic_q2_aug"] = Q2_aug.mean().item()
+                metrics["augmentation_approximation_error"] = approximation_error
+            Q1 = torch.mean(torch.stack([Q1, Q1_aug], dim=0), dim=0)
+            Q2 = torch.mean(torch.stack([Q2, Q2_aug], dim=0), dim=0)
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
         metrics["critic_target_q"] = target_Q.mean().item()
+        metrics["critic_target_q_std"] = target_Q.std().item()
+        metrics["critic_q1_std"] = Q1.std().item()
+        metrics["critic_q2_std"] = Q2.std().item()
         metrics["critic_q1"] = Q1.mean().item()
         metrics["critic_q2"] = Q2.mean().item()
         metrics["critic_loss"] = critic_loss.item()
@@ -148,8 +164,8 @@ class MAEAgent:
         recon_loss.backward()
         self.model_opt.step()
         gt_img, pred_img, gt_masked_img = self.render_reconstruction(
-            pred_pixel_values[0], patches[0], masked_indices[0], obs[0], seq_len=3
-        )  # TODO: get framestack from obs
+            pred_pixel_values[0], patches[0], masked_indices[0], obs[0], seq_len=obs.shape[1]
+        )
         return {
             "mae_loss": recon_loss.cpu().item(),
             "gt_img": gt_img,
@@ -157,7 +173,7 @@ class MAEAgent:
             "gt_masked_img": gt_masked_img,
         }
 
-    def render_reconstruction(self, pred_pixel_values, patches, masked_indices, img, seq_len=3, channels=3):
+    def render_reconstruction(self, pred_pixel_values, patches, masked_indices, img, seq_len, channels=3):
         pred_patches = pred_pixel_values.detach().cpu()
         patches = patches.cpu()
 
@@ -176,8 +192,8 @@ class MAEAgent:
             pred_w_mask, "(s p1 p2) c h w -> s c (p1 h) (p2 w)", p1=7, p2=7, c=3, h=12, w=12, s=seq_len
         )
         gt_img = torchvision.utils.make_grid(img)
-        pred_img = torchvision.utils.make_grid(pred_recons)  # 7
-        gt_masked_img = torchvision.utils.make_grid(pred_w_mask)  # 7 * framestack)
+        pred_img = torchvision.utils.make_grid(pred_recons)
+        gt_masked_img = torchvision.utils.make_grid(pred_w_mask)
         return gt_img, pred_img, gt_masked_img
 
     def update(self, replay_loader, step):
@@ -205,16 +221,27 @@ class MAEAgent:
         next_obs = rearrange(next_obs, "(b t) c h w -> b t c h w", b=batch_size)
 
         # encode
-        obs = self.model(obs)
-        with torch.no_grad():
-            next_obs = self.model(next_obs)
+        obs_aug = None
+        if self.critic_mask_aug:
+            actor_obs = self.model(obs)
+            obs_aug = self.model(obs, masked=True)
+            obs = self.model(obs, masked=False)
+            metrics["encoded_state_gt_vs_masked_l1"] = F.l1_loss(obs.detach(), obs_aug.detach())
 
-        metrics["batch_reward"] = reward.mean().item()
+            with torch.no_grad():
+                next_obs = self.model(next_obs)
+        else:
+            obs = self.model(obs)
+            actor_obs = obs.detach().clone()
+            with torch.no_grad():
+                next_obs = self.model(next_obs)
         # update critic
-        metrics.update(self.update_critic(obs, action, reward, discount, next_obs, step))
+        metrics.update(self.update_critic(obs, action, reward, discount, next_obs, step, obs_aug))
 
         # update actor
-        metrics.update(self.update_actor(obs.detach(), step))
+        metrics.update(self.update_actor(actor_obs.detach(), step))
+
+        metrics["batch_reward"] = reward.mean().item()
 
         # update critic target
         soft_update_params(self.critic, self.critic_target, self.critic_target_tau)

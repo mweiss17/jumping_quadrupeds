@@ -35,7 +35,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ep_idx = 0
         self.episode_returns = []
 
