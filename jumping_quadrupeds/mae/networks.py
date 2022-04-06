@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import nn
+from torch.distributions.categorical import Categorical
 
 from jumping_quadrupeds.utils import TruncatedNormal, weight_init
 
@@ -251,8 +252,12 @@ class SequentialMaskedAutoEncoder(nn.Module):
         self.use_cls_token = use_cls_token
         if self.use_cls_token:
             self.out_dim = self.enc.dim
-        else:
+        elif not self.use_cls_token and self.mask_type == "mae-uniform":
             self.out_dim = int((1 - self.masking_ratio) * self.total_num_patches + 1) * self.enc.dim
+        elif not self.use_cls_token and self.mask_type == "temporal-multinoulli":
+            self.out_dim = int(self.total_num_patches // self.tokenizer.num_timesteps) * self.enc.dim
+        else:
+            raise ValueError("what")
 
         if use_last_ln:
             self.from_embedding = nn.Sequential(
@@ -261,11 +266,22 @@ class SequentialMaskedAutoEncoder(nn.Module):
         else:
             self.from_embedding = nn.Sequential(nn.Linear(self.dec.dim, self.tokenizer.patch_dim))
 
-    def compute_masks(self, batch_size, seq_len):
-        if self.mask_type == "random":
+    def compute_masks(self, batch_size, seq_len, masked):
+        if self.mask_type == "mae-uniform":
             num_masked = int(self.masking_ratio * self.total_num_patches)
             rand_indices = torch.rand(batch_size, self.total_num_patches, device=self.device).argsort(dim=-1)
             masked_indices, unmasked_indices = rand_indices[:, :num_masked], rand_indices[:, num_masked:]
+        elif self.mask_type == "temporal-multinoulli":
+            num_masked = self.total_num_patches // seq_len
+
+            dist = Categorical(torch.ones(seq_len, device=self.device) / seq_len)
+            masked_indices = dist.sample((batch_size, num_masked))
+            masked_indices = F.one_hot(masked_indices, num_classes=seq_len)
+            masked_indices = rearrange(masked_indices, "b p s -> b (p s)")
+            unmasked_indices = rearrange(
+                (masked_indices - 1).nonzero()[:, 1], "(b m) -> b m", m=self.total_num_patches - num_masked
+            )
+            masked_indices = rearrange(masked_indices.nonzero()[:, 1], "(b m) -> b m", m=num_masked)
         elif self.mask_type == "next_frame":
             num_masked = self.total_num_patches // seq_len
             indices = torch.arange(0, self.total_num_patches, device=self.device).repeat(batch_size, 1)
@@ -273,15 +289,19 @@ class SequentialMaskedAutoEncoder(nn.Module):
             masked_indices = indices[:, self.total_num_patches - num_masked :]
         else:
             raise ValueError("invalid mask type")
+        if not masked:
+            num_masked = 0
+            masked_indices = torch.LongTensor([]).repeat(batch_size, 1)
+            unmasked_indices = torch.arange(self.total_num_patches).repeat(batch_size, 1)
         return masked_indices, unmasked_indices, num_masked
 
-    def forward(self, input, action=None):
+    def forward(self, input, action=None, masked=True):
         # input: (batch_size, num_timesteps, c, h ,w)
         if len(input.shape) == 4:
             input = input.unsqueeze(0)
 
         masked_indices, unmasked_indices, num_masked = self.compute_masks(
-            batch_size=input.shape[0], seq_len=input.shape[1]
+            batch_size=input.shape[0], seq_len=input.shape[1], masked=masked
         )
 
         patches = self.tokenizer.patchify(input)

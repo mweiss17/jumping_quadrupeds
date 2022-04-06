@@ -17,6 +17,7 @@ agent:
     log_std_init: null # exp(-.5) = .6 set to null to disable
     weight_decay: 0.01
     use_actor_ln: True
+    critic_mask_aug: True
 
     stddev_schedule:
       name: linear
@@ -57,9 +58,7 @@ model:
   kwargs:
     use_last_ln: True
     use_cls_token: True
-    mask_type: "next_frame" # random
-
-
+    mask_type: temporal-multinoulli #"next_frame" # mae-uniform, temporal-multinoulli
 
 ### Off-Policy Buffer Configuration ###
 buffer:
@@ -71,4 +70,4 @@ buffer:
     fetch_every: 1000
     num_workers: 1 #4
     save_snapshot: false
-    discount: 0.99
+    discount: .99
