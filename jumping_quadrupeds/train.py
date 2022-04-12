@@ -8,6 +8,7 @@ import submitit
 import torch
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from tqdm import trange
+from torch.profiler import profile, record_function, ProfilerActivity
 
 from jumping_quadrupeds import tokenizers
 from jumping_quadrupeds.buffer import ReplayBufferStorage
@@ -35,7 +36,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self.ep_idx = 0
         self.episode_returns = []
 
@@ -103,7 +104,9 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
             # Make the encoder
             encoder_cls = getattr(networks, self.get("encoder/cls"))
-            encoder = encoder_cls(**self.get("encoder/kwargs")).to(self.device)
+            enc_kwargs = dict(self.get("encoder/kwargs"))
+            enc_kwargs.update({"dim": self.get("model/kwargs/action_encoding_dim") + enc_kwargs["dim"]})
+            encoder = encoder_cls(**enc_kwargs).to(self.device)
 
             # Make the decoder
             decoder_cls = getattr(networks, self.get("decoder/cls"))
@@ -117,10 +120,13 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                     "tokenizer": tokenizer,
                     "encoder": encoder,
                     "decoder": decoder,
+                    "action_dim": self.env.action_space.shape[0],
                     "device": self.device,
                 }
             )
             model = model_cls(**model_kwargs).to(self.device)
+            model_ema = model_cls(**model_kwargs).to(self.device)
+            model_ema.load_state_dict(model.state_dict())
 
             # Make the agent
             from jumping_quadrupeds.mae import agent
@@ -131,6 +137,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 {
                     "action_space": self.env.action_space,
                     "model": model,
+                    "model_ema": model_ema,
                     "device": self.device,
                 },
             )
@@ -176,6 +183,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             self.wandb_log(
                 **{
                     "Episode return": episode_reward,
+                    "Mean Episode Return": np.mean(self.episode_returns),
                     "Number of Episodes": self.ep_idx,
                 }
             )
@@ -229,7 +237,9 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             self.replay_storage.add(time_step, val, logp)
 
             if self.update_now:
+
                 metrics = self.agent.update(self.replay_iter, self.step)
+
                 if self.get("use_wandb") and (self.step % self.get("log_every")) == 0:
                     metrics = self.compute_env_specific_metrics(metrics)
                     self.wandb_log_image("gt_img_viz", metrics["gt_img"])

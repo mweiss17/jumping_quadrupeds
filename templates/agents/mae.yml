@@ -9,6 +9,7 @@ agent:
     critic_lr: 1e-4 # null
     model_lr: 1e-4
     critic_target_tau: 0.01 # 0.01 default
+    model_target_tau: 0.01 # 0.01 default
     num_expl_steps: 2000
     hidden_dim: 1024
     feature_dim: 50
@@ -17,7 +18,10 @@ agent:
     log_std_init: null # exp(-.5) = .6 set to null to disable
     weight_decay: 0.01
     use_actor_ln: True
-    critic_mask_aug: True
+    use_model_ema: True
+    use_q_approx_loss: False
+    use_masked_state_loss: False
+    use_drqv2_augs: True
 
     stddev_schedule:
       name: linear
@@ -32,20 +36,19 @@ decoder:
     depth: 1
     head_dim: 64
     heads: 4
-    mlp_dim: 1024 # dim * 4
+    gelu_mult: 4
 
 
 encoder:
   cls: ViT
   kwargs:
-    dim: 64
+    dim: 128
     head_dim: 64
     depth: 1
     heads: 1
-    mlp_dim: 128  # 2048
     dropout: 0.0
     emb_dropout: 0.0
-    nonlinearity: "geglu"
+    gelu_mult: 4
     qkv_bias: False
 
 tokenizer:
@@ -58,7 +61,9 @@ model:
   kwargs:
     use_last_ln: True
     use_cls_token: True
-    mask_type: temporal-multinoulli #"next_frame" # mae-uniform, temporal-multinoulli
+    auto_encoding_mask_type: hybrid-nfp-mae-uniform # temporal-multinoulli, hybrid-nfp-multinoulli, nfp, mae-uniform
+    state_encoding_mask_type: "None" #temporal-multinoulli
+    action_encoding_dim: 16
 
 ### Off-Policy Buffer Configuration ###
 buffer:
