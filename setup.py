@@ -28,10 +28,12 @@ setup(
         "kornia",
         "dill",
         "h5py",
-        "gym @ git+https://git@github.com/tesfaldet/gym@master#egg=gym",
+        "gym @ git+https://git@github.com/tesfaldet/gym@master#egg=gym[box2d]",
         "speedrun @ git+ssh://git@github.com/inferno-pytorch/speedrun@dev#egg=speedrun",
         "wormulon @ git+ssh://git@github.com/mweiss17/wormulon@main#egg=wormulon",
         "duckietown-gym-daffy @ git+https://github.com/duckietown/gym-duckietown@daffy#egg=duckietown-gym-daffy",
+        "box2d",
+        "dm-env"
     ],
     extras_require={
         "dmc": [
