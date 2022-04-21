@@ -1,6 +1,7 @@
 import os
 import random
 import re
+import PIL
 from collections import namedtuple
 from typing import TypeVar, Iterator, List
 
@@ -213,3 +214,27 @@ def buffer_loader_factory(buffer_type=None, batch_size=None, **kwargs):
 
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
+
+
+def py2pil(a):
+    return np2pil(py2np(a))
+
+
+def np2pil(a):
+    if a.dtype in [np.float32, np.float64]:
+        a = np.uint8(np.clip(a, 0, 1) * 255)
+    return PIL.Image.fromarray(a, mode=guess_mode(a))
+
+
+def py2np(a):
+    return a.permute(1, 2, 0).detach().cpu().numpy()
+
+
+def guess_mode(data):
+    if data.shape[-1] == 1:
+        return "L"
+    if data.shape[-1] == 3:
+        return "RGB"
+    if data.shape[-1] == 4:
+        return "RGBA"
+    raise ValueError("Un-supported shape for image conversion %s" % list(data.shape))

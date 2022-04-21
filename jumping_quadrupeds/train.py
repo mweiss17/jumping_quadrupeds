@@ -36,7 +36,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ep_idx = 0
         self.episode_returns = []
 
@@ -228,10 +228,10 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         time_step = self.env.reset()
         self.replay_storage.add(time_step)
         episode_reward = 0
-
+        action = torch.zeros(self.env.action_space.shape)
         for _ in trange(self.get("total_steps")):
             obs = preprocess_obs(time_step.observation, self.device)
-            action, val, logp = self.agent.act(obs, self.step, eval_mode=False)
+            action, val, logp = self.agent.act(obs, action, self.step, eval_mode=False)
             time_step = self.env.step(action)
             self.next_step()
             self.replay_storage.add(time_step, val, logp)

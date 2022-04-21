@@ -6,11 +6,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
+from torchvision.utils import make_grid
 from einops import rearrange
 
 from jumping_quadrupeds.augs import RandomShiftsAug
 from jumping_quadrupeds.mae.networks import Actor, Critic
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs, py2pil
 
 
 class MAEAgent:
@@ -39,6 +40,7 @@ class MAEAgent:
         use_masked_state_loss=False,
         use_q_approx_loss=False,
         use_drqv2_augs=False,
+        mae_update_optim_step=False,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -54,6 +56,7 @@ class MAEAgent:
         self.use_masked_state_loss = use_masked_state_loss
         self.use_q_approx_loss = use_q_approx_loss
         self.use_drqv2_augs = use_drqv2_augs
+        self.mae_update_optim_step = mae_update_optim_step
 
         # models
         self.model = model
@@ -85,9 +88,9 @@ class MAEAgent:
         self.actor.train(training)
         self.critic.train(training)
 
-    def act(self, obs, step, eval_mode):
+    def act(self, obs, action, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
-        action = torch.zeros(self.action_space.shape)
+        action = torch.as_tensor(action, device=self.device)
         obs = self.model(obs, action=action, mask_type="None", decode=False)
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
 
@@ -173,6 +176,11 @@ class MAEAgent:
         gt_img, pred_img, gt_masked_img = self.render_reconstruction(
             pred_pixel_values[0], patches[0], masked_indices[0], obs[0], seq_len=obs.shape[1]
         )
+        if self.mae_update_optim_step:
+            self.model_opt.zero_grad(set_to_none=True)
+            recon_loss.backward()
+            self.model_opt.step()
+
         return recon_loss, {
             "mae_loss": recon_loss.detach().cpu().item(),
             "gt_img": gt_img,
@@ -180,16 +188,15 @@ class MAEAgent:
             "gt_masked_img": gt_masked_img,
         }
 
-    def render_reconstruction(self, pred_pixel_values, patches, masked_indices, img, seq_len, channels=3):
-        pred_patches = pred_pixel_values.detach().cpu()
-        patches = patches.cpu()
+    def render_reconstruction(self, pred_pixel_values, input, masked_indices, img, seq_len, channels=3):
         h, w = self.model.tokenizer.patch_height, self.model.tokenizer.patch_width
         p1, p2 = img.shape[-2] // h, img.shape[-1] // w
-        pred_patches = rearrange(pred_patches, "p (h w c) -> p c h w", c=channels, h=h, w=w)
-        gt_patches = rearrange(patches, "p (h w c) -> p c h w", c=channels, h=h, w=w)
-        pred_recons = gt_patches.clone()
-        pred_w_mask = gt_patches.clone()
+        pred_patches = rearrange(pred_pixel_values, "p (h w c) -> p c h w", c=channels, h=h, w=w)
+        input = self.model.tokenizer.patchify(input.unsqueeze(0))[0]
+        input = rearrange(input, "p (h w c) -> p c h w", c=channels, h=h, w=w)
 
+        pred_recons = input.clone()
+        pred_w_mask = input.clone()
         pred_recons[masked_indices] = pred_patches
         pred_w_mask[masked_indices] = 0.0
 
@@ -199,9 +206,9 @@ class MAEAgent:
         pred_w_mask = rearrange(
             pred_w_mask, "(s p1 p2) c h w -> s c (p1 h) (p2 w)", p1=p1, p2=p2, c=3, h=h, w=w, s=seq_len
         )
-        gt_img = torchvision.utils.make_grid(img)
-        pred_img = torchvision.utils.make_grid(pred_recons)
-        gt_masked_img = torchvision.utils.make_grid(pred_w_mask)
+        gt_img = make_grid(img)
+        pred_img = make_grid(pred_recons)
+        gt_masked_img = make_grid(pred_w_mask)
         return gt_img, pred_img, gt_masked_img
 
     def update(self, replay_loader, step):
@@ -212,7 +219,6 @@ class MAEAgent:
         next_obs = preprocess_obs(next_obs, self.device)
 
         # update model
-        # if step % 5 == 0:
         recon_loss, mae_metrics = self.mae_update(obs, action)
         metrics.update(mae_metrics)
         batch_size = obs.shape[0]
@@ -261,7 +267,8 @@ class MAEAgent:
             critic_loss = critic_loss + approx_err
         if self.use_masked_state_loss:
             critic_loss = critic_loss + masked_state_mse
-        critic_loss = critic_loss + recon_loss
+        if not self.mae_update_optim_step:
+            critic_loss = critic_loss + recon_loss
         critic_loss.backward()
         self.critic_opt.step()
         self.model_opt.step()

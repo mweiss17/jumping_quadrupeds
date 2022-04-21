@@ -1,0 +1,6 @@
+tokenizer:
+  cls: "SpatioTemporalTokenizer"
+  kwargs:
+    __speedrun__: purge
+    patch_size: 12
+    pe_method: "vit-1d-pe"

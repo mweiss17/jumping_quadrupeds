@@ -6,7 +6,7 @@ agent:
   name: mae
   kwargs:
     lr: 1e-4
-    critic_lr: 1e-4 # null
+    critic_lr: 1e-3 # 1e-4
     model_lr: 1e-4
     critic_target_tau: 0.01 # 0.01 default
     model_target_tau: 0.01 # 0.01 default
@@ -33,7 +33,7 @@ decoder:
   cls: ViT
   kwargs:
     dim: 256 #64 * nheads
-    depth: 1
+    depth: 3
     head_dim: 64
     heads: 4
     gelu_mult: 4
@@ -45,16 +45,18 @@ encoder:
     dim: 128
     head_dim: 64
     depth: 1
-    heads: 1
+    heads: 4
     dropout: 0.0
     emb_dropout: 0.0
-    gelu_mult: 4
+    gelu_mult: 4 #2
     qkv_bias: False
 
 tokenizer:
   cls: "SpatioTemporalTokenizer"
   kwargs:
     patch_size: 12
+    pe_method: "vit-1d-pe"
+
 
 model:
   cls: "SequentialMaskedAutoEncoder" # "VolumetricMaskedAutoEncoder"

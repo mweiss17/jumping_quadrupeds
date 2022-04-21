@@ -332,7 +332,7 @@ class SequentialMaskedAutoEncoder(nn.Module):
         raw_patches = self.tokenizer.patchify(input)
         masked_patches = raw_patches[batch_range, masked_indices]
 
-        embeds = self.tokenizer(raw_patches)
+        embeds = self.tokenizer(input.clone())
         unmasked_embeds = embeds[batch_range, unmasked_indices]
 
         action = self.project_action(action.to(self.device))
@@ -370,4 +370,4 @@ class SequentialMaskedAutoEncoder(nn.Module):
 
         # calculate reconstruction loss
         recon_loss = F.mse_loss(pred_pixel_values, masked_patches)
-        return recon_loss, pred_pixel_values, masked_indices, unmasked_indices, raw_patches
+        return recon_loss, pred_pixel_values, masked_indices, unmasked_indices, input
