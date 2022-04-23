@@ -22,6 +22,7 @@ agent:
     use_q_approx_loss: False
     use_masked_state_loss: False
     use_drqv2_augs: True
+    mae_update_optim_step: False
 
     stddev_schedule:
       name: linear
@@ -65,7 +66,7 @@ model:
     use_cls_token: True
     auto_encoding_mask_type: hybrid-nfp-mae-uniform # temporal-multinoulli, hybrid-nfp-multinoulli, nfp, mae-uniform
     state_encoding_mask_type: "None" #temporal-multinoulli
-    action_encoding_dim: 16
+    action_encoding_dim: 3
 
 ### Off-Policy Buffer Configuration ###
 buffer:
