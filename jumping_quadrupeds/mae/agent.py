@@ -5,13 +5,12 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchvision
-from torchvision.utils import make_grid
 from einops import rearrange
+from torchvision.utils import make_grid
 
 from jumping_quadrupeds.augs import RandomShiftsAug
 from jumping_quadrupeds.mae.networks import Actor, Critic
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs, py2pil
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 
 
 class MAEAgent:
@@ -91,6 +90,7 @@ class MAEAgent:
     def act(self, obs, action, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
         action = torch.as_tensor(action, device=self.device)
+
         obs = self.model(obs, action=action, mask_type="None", decode=False)
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
 

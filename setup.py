@@ -33,7 +33,7 @@ setup(
         "wormulon @ git+ssh://git@github.com/mweiss17/wormulon@main#egg=wormulon",
         "duckietown-gym-daffy @ git+https://github.com/duckietown/gym-duckietown@daffy#egg=duckietown-gym-daffy",
         "box2d",
-        "dm-env"
+        "dm-env",
     ],
     extras_require={
         "dmc": [

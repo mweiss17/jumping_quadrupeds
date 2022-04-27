@@ -8,7 +8,6 @@ import submitit
 import torch
 from speedrun import BaseExperiment, WandBMixin, IOMixin, register_default_dispatch
 from tqdm import trange
-from torch.profiler import profile, record_function, ProfilerActivity
 
 from jumping_quadrupeds import tokenizers
 from jumping_quadrupeds.buffer import ReplayBufferStorage
@@ -36,7 +35,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         # env setup
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = "cpu"  # torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ep_idx = 0
         self.episode_returns = []
 
@@ -233,6 +232,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             obs = preprocess_obs(time_step.observation, self.device)
             action, val, logp = self.agent.act(obs, action, self.step, eval_mode=False)
             time_step = self.env.step(action)
+
             self.next_step()
             self.replay_storage.add(time_step, val, logp)
 

@@ -1,4 +1,5 @@
 import torch
+from einops import rearrange
 from torch import nn
 
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
@@ -56,21 +57,32 @@ class AbstractActorCritic(nn.Module):
 
 
 class CNNGaussianActor(Actor):
-    def __init__(self, encoder, action_space, hidden_sizes, log_std):
+    def __init__(self, encoder, action_space, hidden_sizes, timesteps, log_std):
         super().__init__()
         self.encoder = encoder
         self.action_space = action_space
+        self.timesteps = timesteps
         self.low = action_space.low[0]
         self.high = action_space.high[0]
-        self.linear = nn.Linear(64 * hidden_sizes, self.action_space.shape[0])
+        self.linear = nn.Linear(64 * hidden_sizes * timesteps, self.action_space.shape[0])
         self.log_std = torch.nn.Parameter(-log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
 
     def _distribution(self, obs):
         if len(obs.shape) == 3:
             obs = obs.unsqueeze(0)
+        folded = False
+        if len(obs.shape) == 5:
+            folded = True
+            obs = rearrange(obs, "b t c w h -> (b t) c w h")
+
         preactivations = self.encoder(obs)
+        if folded:
+            preactivations = rearrange(preactivations, "(b t) c -> b (t c)", t=self.timesteps)
+        else:
+            preactivations = rearrange(preactivations, "t c -> (t c)")
         mu = torch.tanh(self.linear(preactivations))
         std = torch.exp(self.log_std)
+
         return TruncatedNormal(mu, std, low=self.low, high=self.high)
 
     def _log_prob_from_distribution(self, pi, act):
@@ -97,15 +109,19 @@ class ConvActorCritic(AbstractActorCritic):
         log_std=0.5,
     ):
         super().__init__()
-
-        channels = observation_space.shape[0]
-
+        if len(observation_space.shape) == 4:
+            timesteps = observation_space.shape[0]
+            channels = observation_space.shape[1]
+        else:
+            timesteps = 1
+            channels = observation_space.shape[0]
         actor_encoder = WorldModelsConvEncoder(channels)
         critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space,
             hidden_sizes,  # 4 * 4 square scaling factor for base-racing
+            timesteps,
             log_std,
         )
 

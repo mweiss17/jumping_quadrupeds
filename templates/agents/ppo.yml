@@ -1,6 +1,7 @@
 ### PPO Agent Base Configuration ###
 agent:
   name: "ppo"
+  cls: PPOAgent
   kwargs:
     clip_ratio: 0.2 #(float): clips the amount that the old policy can change
     pi_lr: 1.0e-3 #3.0e-4 # (float): Learning rate for policy optimizer.
@@ -21,7 +22,7 @@ agent:
 ### On-Policy Buffer Configuration ###
 buffer:
   kwargs:
-    type: "on-policy"
+    buffer_type: "on-policy"
     batch_size: null
     num_workers: 0 # only works with 0 workers
     save_snapshot: False

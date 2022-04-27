@@ -2,13 +2,13 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import time
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
-from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
+
 from jumping_quadrupeds.augs import RandomShiftsAug
+from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 
 
 class DrQV2Agent:
@@ -61,7 +61,7 @@ class DrQV2Agent:
         self.actor.train(training)
         self.critic.train(training)
 
-    def act(self, obs, step, eval_mode):
+    def act(self, obs, action, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
         obs = self.encoder(obs.unsqueeze(0))
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)

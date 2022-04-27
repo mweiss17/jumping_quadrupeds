@@ -168,5 +168,5 @@ class PPOAgent:
         self.pi_optimizer.load_state_dict(checkpoint["actor_opt"])
         self.vf_optimizer.load_state_dict(checkpoint["critic_opt"])
 
-    def act(self, obs, step, eval_mode):
+    def act(self, obs, action, step, eval_mode):
         return self.ac.step(obs, eval_mode)
