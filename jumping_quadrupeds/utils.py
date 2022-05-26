@@ -8,6 +8,7 @@ from typing import TypeVar, Iterator, List
 import numpy as np
 import torch
 import torch.nn as nn
+from einops import rearrange
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
 from torch.utils.data import IterableDataset
@@ -113,6 +114,24 @@ class TruncatedNormal(pyd.Normal):
             eps = torch.clamp(eps, -clip, clip)
         x = self.loc + eps
         return self._clamp(x)
+
+
+def fold_timesteps_and_channels_if_needed(embeddings, timesteps, folded):
+    # fold the timesteps and channels together for linear processing
+    if folded:
+        return rearrange(embeddings, "(b t) c -> b (t c)", t=timesteps)
+    else:
+        return rearrange(embeddings, "t c -> (t c)")
+
+
+def fold_timesteps_if_needed(obs):
+    if len(obs.shape) == 3:
+        obs = obs.unsqueeze(0)
+    folded = False
+    if len(obs.shape) == 5:
+        folded = True
+        obs = rearrange(obs, "b t c w h -> (b t) c w h")
+    return obs, folded
 
 
 def preprocess_obs(obs, device):

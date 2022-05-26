@@ -1,9 +1,8 @@
 import torch
-from einops import rearrange
 from torch import nn
 
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
-from jumping_quadrupeds.utils import TruncatedNormal
+from jumping_quadrupeds.utils import TruncatedNormal, fold_timesteps_if_needed, fold_timesteps_and_channels_if_needed
 
 
 class Actor(nn.Module):
@@ -68,18 +67,13 @@ class CNNGaussianActor(Actor):
         self.log_std = torch.nn.Parameter(-log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
 
     def _distribution(self, obs):
-        if len(obs.shape) == 3:
-            obs = obs.unsqueeze(0)
-        folded = False
-        if len(obs.shape) == 5:
-            folded = True
-            obs = rearrange(obs, "b t c w h -> (b t) c w h")
+        obs, folded = fold_timesteps_if_needed(obs)
 
         preactivations = self.encoder(obs)
-        if folded:
-            preactivations = rearrange(preactivations, "(b t) c -> b (t c)", t=self.timesteps)
-        else:
-            preactivations = rearrange(preactivations, "t c -> (t c)")
+
+        preactivations = fold_timesteps_and_channels_if_needed(preactivations, self.timesteps, folded)
+
+        # apply linear processing
         mu = torch.tanh(self.linear(preactivations))
         std = torch.exp(self.log_std)
 
@@ -90,13 +84,17 @@ class CNNGaussianActor(Actor):
 
 
 class CNNCritic(nn.Module):
-    def __init__(self, encoder, hidden_sizes):
+    def __init__(self, encoder, hidden_sizes, timesteps):
         super().__init__()
         self.encoder = encoder
-        self.linear = nn.Linear(64 * hidden_sizes, 1)
+        self.timesteps = timesteps
+        self.linear = nn.Linear(64 * hidden_sizes * timesteps, 1)
 
     def forward(self, obs):
-        return torch.squeeze(self.linear(self.encoder(obs)), -1)
+        obs, folded = fold_timesteps_if_needed(obs)
+        preactivations = self.encoder(obs)
+        preactivations = fold_timesteps_and_channels_if_needed(preactivations, self.timesteps, folded)
+        return self.linear(preactivations)
 
 
 class ConvActorCritic(AbstractActorCritic):
@@ -126,7 +124,7 @@ class ConvActorCritic(AbstractActorCritic):
         )
 
         # build value function
-        self.v = CNNCritic(critic_encoder, hidden_sizes)
+        self.v = CNNCritic(critic_encoder, hidden_sizes, timesteps)
 
     def load_encoder(self, filepath):
         # Load the state encoder

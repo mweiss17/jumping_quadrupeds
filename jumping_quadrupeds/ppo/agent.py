@@ -77,6 +77,7 @@ class PPOAgent:
 
     def compute_loss_pi(self, obs, act, adv, logp_old):
         """Computes policy loss"""
+
         obs = preprocess_obs(obs, self.device)
         # Policy loss
         pi, logp = self.ac.pi(obs, act)

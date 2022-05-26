@@ -36,7 +36,6 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         seed = set_seed(seed=self.get("seed"))
         self.env = make_env(seed=seed, **self.get("env/kwargs"))
         self.device = "cpu"  # torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.ep_idx = 0
         self.episode_returns = []
 
         self._build_buffer()
@@ -176,18 +175,17 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
         return False
 
     def write_logs(self, episode_reward):
+        self.episode_returns.append(episode_reward)
+        logs = {
+            "Episode return": episode_reward,
+            "Mean Episode Return": np.mean(self.episode_returns),
+            "Number of Episodes": len(self.episode_returns),
+        }
         if self.get("use_wandb"):
-            self.ep_idx += 1
-            self.episode_returns.append(episode_reward)
-            self.wandb_log(
-                **{
-                    "Episode return": episode_reward,
-                    "Mean Episode Return": np.mean(self.episode_returns),
-                    "Number of Episodes": self.ep_idx,
-                }
-            )
-
+            self.wandb_log(**logs)
             self.env.send_wandb_video()
+        else:
+            print(logs)
 
     def compute_env_specific_metrics(self, metrics):
         if "CarRacing" in self.get("env/kwargs/name"):
@@ -240,15 +238,18 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
 
                 metrics = self.agent.update(self.replay_iter, self.step)
 
-                if self.get("use_wandb") and (self.step % self.get("log_every")) == 0:
+                if (self.step % self.get("log_every")) == 0:
                     metrics = self.compute_env_specific_metrics(metrics)
-                    self.wandb_log_image("gt_img_viz", metrics["gt_img"])
-                    self.wandb_log_image("pred_img_viz", metrics["pred_img"])
-                    self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])
-                    del metrics["gt_img"]
-                    del metrics["pred_img"]
-                    del metrics["gt_masked_img"]
-                    self.wandb_log(**metrics)
+                    if self.get("use_wandb"):
+                        self.wandb_log_image("gt_img_viz", metrics["gt_img"])
+                        self.wandb_log_image("pred_img_viz", metrics["pred_img"])
+                        self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])
+                        del metrics["gt_img"]
+                        del metrics["pred_img"]
+                        del metrics["gt_masked_img"]
+                        self.wandb_log(**metrics)
+                    else:
+                        print(metrics)
 
             if self.checkpoint_now:
                 self.save(checkpoint_path=self.checkpoint_path)
