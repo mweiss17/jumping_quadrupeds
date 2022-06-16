@@ -241,12 +241,13 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 if (self.step % self.get("log_every")) == 0:
                     metrics = self.compute_env_specific_metrics(metrics)
                     if self.get("use_wandb"):
-                        self.wandb_log_image("gt_img_viz", metrics["gt_img"])
-                        self.wandb_log_image("pred_img_viz", metrics["pred_img"])
-                        self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])
-                        del metrics["gt_img"]
-                        del metrics["pred_img"]
-                        del metrics["gt_masked_img"]
+                        if self.get("agent/name") == "mae":
+                            self.wandb_log_image("gt_img_viz", metrics["gt_img"])
+                            self.wandb_log_image("pred_img_viz", metrics["pred_img"])
+                            self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])
+                            del metrics["gt_img"]
+                            del metrics["pred_img"]
+                            del metrics["gt_masked_img"]
                         self.wandb_log(**metrics)
                     else:
                         print(metrics)
