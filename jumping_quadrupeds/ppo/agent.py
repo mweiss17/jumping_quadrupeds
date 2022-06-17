@@ -170,4 +170,6 @@ class PPOAgent:
         self.vf_optimizer.load_state_dict(checkpoint["critic_opt"])
 
     def act(self, obs, action, step, eval_mode):
+        if len(obs.shape) == 4:
+            obs = obs.unsqueeze(0)
         return self.ac.step(obs, eval_mode)

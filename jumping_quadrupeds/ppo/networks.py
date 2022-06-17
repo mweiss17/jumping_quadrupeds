@@ -1,8 +1,9 @@
 import torch
+from einops import rearrange
 from torch import nn
 
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
-from jumping_quadrupeds.utils import TruncatedNormal, fold_timesteps_if_needed, fold_timesteps_and_channels_if_needed
+from jumping_quadrupeds.utils import TruncatedNormal
 
 
 class Actor(nn.Module):
@@ -56,22 +57,19 @@ class AbstractActorCritic(nn.Module):
 
 
 class CNNGaussianActor(Actor):
-    def __init__(self, encoder, action_space, hidden_sizes, timesteps, log_std):
+    def __init__(self, encoder, action_space, hidden_sizes, log_std):
         super().__init__()
         self.encoder = encoder
         self.action_space = action_space
-        self.timesteps = timesteps
         self.low = action_space.low[0]
         self.high = action_space.high[0]
-        self.linear = nn.Linear(64 * hidden_sizes * timesteps, self.action_space.shape[0])
+        self.linear = nn.Linear(64 * hidden_sizes, self.action_space.shape[0])
         self.log_std = torch.nn.Parameter(-log_std * torch.ones(self.action_space.shape[0], dtype=torch.float32))
 
     def _distribution(self, obs):
-        obs, folded = fold_timesteps_if_needed(obs)
+        obs = rearrange(obs, "b t c w h -> b (t c) w h")
 
         preactivations = self.encoder(obs)
-
-        preactivations = fold_timesteps_and_channels_if_needed(preactivations, self.timesteps, folded)
 
         # apply linear processing
         mu = torch.tanh(self.linear(preactivations))
@@ -84,16 +82,14 @@ class CNNGaussianActor(Actor):
 
 
 class CNNCritic(nn.Module):
-    def __init__(self, encoder, hidden_sizes, timesteps):
+    def __init__(self, encoder, hidden_sizes):
         super().__init__()
         self.encoder = encoder
-        self.timesteps = timesteps
-        self.linear = nn.Linear(64 * hidden_sizes * timesteps, 1)
+        self.linear = nn.Linear(64 * hidden_sizes, 1)
 
     def forward(self, obs):
-        obs, folded = fold_timesteps_if_needed(obs)
+        obs = rearrange(obs, "b t c w h -> b (t c) w h")
         preactivations = self.encoder(obs)
-        preactivations = fold_timesteps_and_channels_if_needed(preactivations, self.timesteps, folded)
         return self.linear(preactivations)
 
 
@@ -107,24 +103,19 @@ class ConvActorCritic(AbstractActorCritic):
         log_std=0.5,
     ):
         super().__init__()
-        if len(observation_space.shape) == 4:
-            timesteps = observation_space.shape[0]
-            channels = observation_space.shape[1]
-        else:
-            timesteps = 1
-            channels = observation_space.shape[0]
-        actor_encoder = WorldModelsConvEncoder(channels)
-        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels)
+        timesteps = observation_space.shape[0]
+        channels = observation_space.shape[1]
+        actor_encoder = WorldModelsConvEncoder(channels * timesteps)
+        critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels * timesteps)
         self.pi = CNNGaussianActor(
             actor_encoder,
             action_space,
             hidden_sizes,  # 4 * 4 square scaling factor for base-racing
-            timesteps,
             log_std,
         )
 
         # build value function
-        self.v = CNNCritic(critic_encoder, hidden_sizes, timesteps)
+        self.v = CNNCritic(critic_encoder, hidden_sizes)
 
     def load_encoder(self, filepath):
         # Load the state encoder

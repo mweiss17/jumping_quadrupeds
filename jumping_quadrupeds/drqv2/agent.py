@@ -5,6 +5,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+from einops import rearrange
 
 from jumping_quadrupeds.augs import RandomShiftsAug
 from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
@@ -136,12 +137,21 @@ class DrQV2Agent:
     def update(self, replay_iter, step):
         metrics = dict()
         obs, action, reward, discount, next_obs = to_torch(next(replay_iter), self.device)
+        batch_size = obs.shape[0]
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
+
+        # fold the batch in
+        obs = rearrange(obs, "b t c h w -> (b t) c h w")
+        next_obs = rearrange(next_obs, "b t c h w -> (b t) c h w")
 
         # augment
         obs = self.aug(obs)
         next_obs = self.aug(next_obs)
+
+        # expand the timesteps back out
+        obs = rearrange(obs, "(b t) c h w -> b t c h w", b=batch_size)
+        next_obs = rearrange(next_obs, "(b t) c h w -> b t c h w", b=batch_size)
 
         # encode
         obs = self.encoder(obs)

@@ -13,5 +13,5 @@ seed: 1 # (int): random seed
 total_steps: 1000000 # (int): total steps to run the experiment
 save_freq: 100000 # (int): save policy every n steps
 log_every: 100
-num_seed_frames: 0 #4000
+num_seed_frames: 4000
 
