@@ -1,24 +1,26 @@
 import os
-import re
 import random
-import torch
-import argparse
+import re
+import PIL
+from collections import namedtuple
+from typing import TypeVar, Iterator, List
+
 import numpy as np
+import torch
 import torch.nn as nn
-from typing import TypeVar, Generic, Iterable, Iterator, Sequence, List, Optional, Tuple
-from torchvision.transforms import transforms
+from einops import rearrange
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
-from collections import defaultdict, namedtuple
+from torch.utils.data import IterableDataset
+from torchvision.transforms import transforms
+
 from jumping_quadrupeds.buffer import OffPolicyReplayBuffer
 from jumping_quadrupeds.ppo.buffer import OnPolicyReplayBuffer
-from torch.utils.data import IterableDataset
+
+# from jumping_quadrupeds.spr.buffer import OffPolicySequentialReplayBuffer
 
 T_co = TypeVar("T_co", covariant=True)
-
-
 DataSpec = namedtuple("DataSpec", ["name", "shape", "dtype"])
-### FILE ADAPTED FROM OPENAI SPINNINGUP, https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/ppo
 
 
 def schedule(schdl, step, log_std):
@@ -114,6 +116,24 @@ class TruncatedNormal(pyd.Normal):
         return self._clamp(x)
 
 
+def fold_timesteps_and_channels_if_needed(embeddings, timesteps, folded):
+    # fold the timesteps and channels together for linear processing
+    if folded:
+        return rearrange(embeddings, "(b t) c -> b (t c)", t=timesteps)
+    else:
+        return rearrange(embeddings, "t c -> (t c)")
+
+
+def fold_timesteps_if_needed(obs):
+    if len(obs.shape) == 3:
+        obs = obs.unsqueeze(0)
+    folded = False
+    if len(obs.shape) == 5:
+        folded = True
+        obs = rearrange(obs, "b t c w h -> (b t) c w h")
+    return obs, folded
+
+
 def preprocess_obs(obs, device):
     assert obs.dtype == np.uint8 or obs.dtype == torch.uint8
     if obs.dtype == np.uint8:
@@ -178,34 +198,62 @@ class BufferedShuffleDataset(IterableDataset[T_co]):
             yield buf.pop()
 
 
-def buffer_loader_factory(type=None, batch_size=None, **kwargs):
+def buffer_loader_factory(buffer_type=None, batch_size=None, **kwargs):
     def _worker_init_fn(worker_id):
         seed = np.random.get_state()[1][0] + worker_id
         np.random.seed(seed)
         random.seed(seed)
 
-    if type == "on-policy":
+    if buffer_type == "on-policy":
         buffer = OnPolicyReplayBuffer(**kwargs)
         buffer_size = batch_size
-    elif type == "off-policy":
+    elif buffer_type == "off-policy":
         buffer = OffPolicyReplayBuffer(**kwargs)
         buffer_size = batch_size * kwargs.get("num_workers")
-    elif type == "off-policy-sequential":
+    elif buffer_type == "off-policy-sequential":
         buffer = OffPolicySequentialReplayBuffer(**kwargs)
         buffer_size = batch_size * kwargs.get("num_workers")
 
     else:
         raise ValueError(
-            f"Unknown replay buffer name: {name}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
+            f"Unknown replay buffer name: {buffer_type}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
         )
-    if type == "off-policy":
+    if buffer_type == "off-policy":
         buffer = BufferedShuffleDataset(buffer, buffer_size=buffer_size)
 
     loader = torch.utils.data.DataLoader(
         buffer,
         batch_size=batch_size,
         num_workers=kwargs.get("num_workers"),
-        pin_memory=True,
         worker_init_fn=_worker_init_fn,
+        pin_memory=True,
     )
     return loader
+
+
+def pair(t):
+    return t if isinstance(t, tuple) else (t, t)
+
+
+def py2pil(a):
+    return np2pil(py2np(a))
+
+
+def np2pil(a):
+    if a.dtype in [np.float32, np.float64]:
+        a = np.uint8(np.clip(a, 0, 1) * 255)
+    return PIL.Image.fromarray(a, mode=guess_mode(a))
+
+
+def py2np(a):
+    return a.permute(1, 2, 0).detach().cpu().numpy()
+
+
+def guess_mode(data):
+    if data.shape[-1] == 1:
+        return "L"
+    if data.shape[-1] == 3:
+        return "RGB"
+    if data.shape[-1] == 4:
+        return "RGBA"
+    raise ValueError("Un-supported shape for image conversion %s" % list(data.shape))

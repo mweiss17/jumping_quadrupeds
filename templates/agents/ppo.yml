@@ -1,9 +1,12 @@
 ### PPO Agent Base Configuration ###
+num_seed_frames: 4000
+
 agent:
   name: "ppo"
+  cls: PPOAgent
   kwargs:
     clip_ratio: 0.2 #(float): clips the amount that the old policy can change
-    pi_lr: 1.0e-3 #3.0e-4 # (float): Learning rate for policy optimizer.
+    pi_lr: 3.0e-4 # (float): Learning rate for policy optimizer.
     vf_lr: 1.0e-3 #  (float): Learning rate for value function optimizer.
     train_pi_iters: 4 #(int): Maximum number of gradient descent steps to take on policy loss per epoch.
     train_v_iters: 4 # (int): Number of gradient descent steps to take on value function per epoch.
@@ -11,17 +14,16 @@ agent:
     rew_smooth_len: 10 # (int): rewards are accumulated in a ring buffer and this determines the size
     conv_ac_hidden_scaling: 36 # 36 if 3x84x84 elif obs_shape is 3x64x64 then 16
     shared_encoder: False
-    log_std: 0.8 #0.5
+    log_std: 0.5 #0.8
     num_expl_steps: 4000
     freeze_encoder: False
-    update_every_steps: 4000
-    num_seed_frames: 0
+    update_every_steps: 1000
 
 
 ### On-Policy Buffer Configuration ###
 buffer:
   kwargs:
-    type: "on-policy"
+    buffer_type: "on-policy"
     batch_size: null
     num_workers: 0 # only works with 0 workers
     save_snapshot: False

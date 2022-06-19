@@ -2,14 +2,16 @@
 # gym-SEVN-Train-AllObs-Shaped-v1
 env:
   kwargs:
-    name: gym-CarRacing-v0 # gym-CarRacingManualConeObstacles-v0 #  gym-CarRacingCone-v0  # (str): Environment name, used for logging. options include "gym-Duckietown-small_loop-v0" #CarRacing-v0 # dm-quadruped_walk
-    render_every: 25 # (int): Frequency at which to create a video of a rollout.
-    action_repeat: 1
-    frame_stack: 1
+    name: gym-CarRacing-v0 # gym-CarRacingManualConeObstacles-v0 #  gym-CarRacingCone-v0  # (str): Environment name, used for logging. options include #CarRacing-v0 # dm-quadruped_walk
+    render_every: 5 # 25 # (int): Frequency at which to create a video of a rollout.
+    action_repeat: 3
+    frame_stack: 3
 
 ### Experimental ###
 use_wandb: True
 seed: 1 # (int): random seed
 total_steps: 1000000 # (int): total steps to run the experiment
 save_freq: 100000 # (int): save policy every n steps
+log_every: 100
+num_seed_frames: 4000
 

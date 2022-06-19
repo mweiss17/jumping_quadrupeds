@@ -1,0 +1,9 @@
+tokenizer:
+  cls: "SpatioTemporalTokenizer"
+  kwargs:
+    __speedrun__: purge
+    patch_size: 12
+    pe_method: "nerf-2d-pe"
+    pe_basis: "sin_cos_xy"
+    pe_max_freq: 5
+

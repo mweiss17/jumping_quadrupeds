@@ -1,0 +1,7 @@
+tokenizer:
+  cls: "SpatioTemporalTokenizer"
+  kwargs:
+    __speedrun__: purge
+    patch_size: 12
+    pe_method: "nerf-3d-pe-raw"
+

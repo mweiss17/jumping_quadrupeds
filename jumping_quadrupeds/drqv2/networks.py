@@ -1,17 +1,21 @@
 import torch
 import torch.nn as nn
-from jumping_quadrupeds.utils import TruncatedNormal, weight_init
+from einops import rearrange
+
+from jumping_quadrupeds.utils import TruncatedNormal, weight_init, fold_timesteps_if_needed
 
 
 class Encoder(nn.Module):
     def __init__(self, obs_space):
         super().__init__()
+        assert len(obs_space.shape) == 4
 
         # assert len(obs_space.shape) == 3
         self.repr_dim = 32 * 35 * 35
-
+        self.timesteps = obs_space.shape[0]
+        self.channels = obs_space.shape[1]
         self.convnet = nn.Sequential(
-            nn.Conv2d(obs_space.shape[0], 32, 3, stride=2),
+            nn.Conv2d(self.timesteps * self.channels, 32, 3, stride=2),
             nn.ReLU(),
             nn.Conv2d(32, 32, 3, stride=1),
             nn.ReLU(),
@@ -24,6 +28,7 @@ class Encoder(nn.Module):
         self.apply(weight_init)
 
     def forward(self, obs):
+        obs = rearrange(obs, "b t c w h -> b (t c) w h")
         h = self.convnet(obs)
         h = h.view(h.shape[0], -1)
         return h

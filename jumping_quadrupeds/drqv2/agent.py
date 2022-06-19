@@ -2,13 +2,14 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import time
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
-from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
+from einops import rearrange
+
 from jumping_quadrupeds.augs import RandomShiftsAug
+from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 
 
 class DrQV2Agent:
@@ -61,7 +62,7 @@ class DrQV2Agent:
         self.actor.train(training)
         self.critic.train(training)
 
-    def act(self, obs, step, eval_mode):
+    def act(self, obs, action, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
         obs = self.encoder(obs.unsqueeze(0))
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
@@ -136,12 +137,21 @@ class DrQV2Agent:
     def update(self, replay_iter, step):
         metrics = dict()
         obs, action, reward, discount, next_obs = to_torch(next(replay_iter), self.device)
+        batch_size = obs.shape[0]
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
+
+        # fold the batch in
+        obs = rearrange(obs, "b t c h w -> (b t) c h w")
+        next_obs = rearrange(next_obs, "b t c h w -> (b t) c h w")
 
         # augment
         obs = self.aug(obs)
         next_obs = self.aug(next_obs)
+
+        # expand the timesteps back out
+        obs = rearrange(obs, "(b t) c h w -> b t c h w", b=batch_size)
+        next_obs = rearrange(next_obs, "(b t) c h w -> b t c h w", b=batch_size)
 
         # encode
         obs = self.encoder(obs)

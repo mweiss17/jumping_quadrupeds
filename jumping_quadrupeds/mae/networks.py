@@ -1,62 +1,14 @@
 import torch
-import torch.nn as nn
-from jumping_quadrupeds.utils import TruncatedNormal, weight_init
-import os
-import torchvision
-import numpy as np
-import matplotlib.pyplot as plt
-import dill
-import math
-from itertools import cycle
-
-import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
+from einops import rearrange, repeat
+from torch import nn
+from torch.distributions.categorical import Categorical
+
+from jumping_quadrupeds.utils import TruncatedNormal, weight_init
+
 
 # from torchmeta.datasets.helpers import miniimagenet
 # from torchmeta.utils.data import NonEpisodicWrapper
-
-from jumping_quadrupeds.eth.dataset import Hdf5ImgDataset
-from jumping_quadrupeds.utils import common_img_transforms, abs_path
-from torch.utils.data import RandomSampler, DataLoader, Subset
-
-from einops import rearrange, repeat, reduce
-from einops.layers.torch import Rearrange
-
-
-# helpers
-def imshow(img):
-    img = img / 2 + 0.5  # unnormalize
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
-
-
-def pair(t):
-    return t if isinstance(t, tuple) else (t, t)
-
-
-def exists(val):
-    return val is not None
-
-
-def prob_mask_like(t, prob):
-    batch, seq_length, _ = t.shape
-    return torch.zeros((batch, seq_length)).float().uniform_(0, 1) < prob
-
-
-def get_mask_subset_with_prob(patched_input, prob):
-    batch, seq_len, _, device = *patched_input.shape, patched_input.device
-    max_masked = math.ceil(prob * seq_len)
-
-    rand = torch.rand((batch, seq_len), device=device)
-    _, sampled_indices = rand.topk(max_masked, dim=-1)
-
-    new_mask = torch.zeros((batch, seq_len), device=device)
-    new_mask.scatter_(1, sampled_indices, 1)
-    return new_mask.bool()
 
 
 class Encoder(nn.Module):
@@ -180,7 +132,7 @@ class GEGLU(nn.Module):
 
 
 class FeedForwardGEGLU(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout=0.0, mult=4):
+    def __init__(self, dim, mult=4, dropout=0.0):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(dim, dim * mult * 2), GEGLU(), nn.Linear(dim * mult, dim))
 
@@ -200,13 +152,13 @@ class FeedForward(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0, qkv_bias=False):
+    def __init__(self, dim, heads=8, head_dim=64, dropout=0.0, qkv_bias=False):
         super().__init__()
-        inner_dim = dim_head * heads
-        project_out = not (heads == 1 and dim_head == dim)
+        inner_dim = head_dim * heads
+        project_out = not (heads == 1 and head_dim == dim)
 
         self.heads = heads
-        self.scale = dim_head**-0.5
+        self.scale = head_dim**-0.5
 
         self.attend = nn.Softmax(dim=-1)
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=qkv_bias)
@@ -226,194 +178,196 @@ class Attention(nn.Module):
         return self.to_out(out)
 
 
-class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0, encoder_nonlinearity="gelu", qkv_bias=False):
+class ViT(nn.Module):
+    def __init__(
+        self,
+        dim,
+        depth,
+        heads,
+        head_dim,
+        dropout=0.0,
+        emb_dropout=0.0,
+        gelu_mult=4,
+        qkv_bias=False,
+    ):
         super().__init__()
         self.layers = nn.ModuleList([])
-        ffn = FeedForward if encoder_nonlinearity == "gelu" else FeedForwardGEGLU
+        self.dim = dim
         for _ in range(depth):
             self.layers.append(
                 nn.ModuleList(
                     [
                         PreNorm(
-                            dim, Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout, qkv_bias=qkv_bias)
+                            dim, Attention(dim, heads=heads, head_dim=head_dim, dropout=dropout, qkv_bias=qkv_bias)
                         ),
-                        PreNorm(dim, ffn(dim, mlp_dim, dropout=dropout)),
+                        PreNorm(dim, FeedForwardGEGLU(dim, gelu_mult, dropout=dropout)),
                     ]
                 )
             )
+        self.dropout = nn.Dropout(emb_dropout)
 
     def forward(self, x):
+        x = self.dropout(x)
         for attn, ff in self.layers:
             x = attn(x) + x
             x = ff(x) + x
         return x
 
 
-class ViT(nn.Module):
+class SequentialMaskedAutoEncoder(nn.Module):
     def __init__(
         self,
-        *,
-        image_size,
-        patch_size,
-        num_classes,
-        dim,
-        depth,
-        heads,
-        mlp_dim,
-        pool="cls",
-        channels=3,
-        dim_head=64,
-        dropout=0.0,
-        emb_dropout=0.0,
-        encoder_nonlinearity="gelu",
-        use_last_ln=True,
-        qkv_bias=False,
-    ):
-        super().__init__()
-        self.dim = dim
-        image_height, image_width = pair(image_size)
-        patch_height, patch_width = pair(patch_size)
-
-        assert (
-            image_height % patch_height == 0 and image_width % patch_width == 0
-        ), "Image dimensions must be divisible by the patch size."
-
-        num_patches = (image_height // patch_height) * (image_width // patch_width)
-        patch_dim = channels * patch_height * patch_width
-        assert pool in {"cls", "mean"}, "pool type must be either cls (cls token) or mean (mean pooling)"
-
-        self.to_patch_embedding = nn.Sequential(
-            Rearrange("b c (h p1) (w p2) -> b (h w) (p1 p2 c)", p1=patch_height, p2=patch_width),
-            nn.Linear(patch_dim, dim),
-        )
-
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
-        self.dropout = nn.Dropout(emb_dropout)
-
-        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout, encoder_nonlinearity, qkv_bias)
-
-        self.pool = pool
-        self.to_latent = nn.Identity()
-        if use_last_ln:
-            self.mlp_head = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, num_classes))
-        else:
-            self.mlp_head = nn.Sequential(nn.Linear(dim, num_classes))
-
-    def forward(self, imgs):
-        x = self.to_patch_embedding(imgs)
-        b, s, n, _ = x.shape
-
-        cls_tokens = repeat(self.cls_token, "() n d -> b n d", b=b)
-        x = torch.cat((cls_tokens, x), dim=1)
-        x += self.pos_embedding[:, : (n + 1)]
-        x = self.dropout(x)
-
-        x = self.transformer(x)
-
-        x = x.mean(dim=1) if self.pool == "mean" else x[:, 0]
-
-        x = self.to_latent(x)
-        return self.mlp_head(x)
-
-
-class MAE(nn.Module):
-    def __init__(
-        self,
-        *,
+        tokenizer,
         encoder,
-        decoder_dim,
+        decoder,
+        action_dim,
         masking_ratio=0.75,
-        decoder_depth=1,
-        decoder_heads=8,
-        decoder_dim_head=64,
-        mask_strat="all",
         device=None,
+        use_cls_token=False,
+        use_last_ln=False,
+        auto_encoding_mask_type="random",
+        state_encoding_mask_type="random",
+        action_encoding_dim=16,
     ):
         super().__init__()
         assert masking_ratio > 0 and masking_ratio < 1, "masking ratio must be kept between 0 and 1"
         self.masking_ratio = masking_ratio
-        self.mask_strat = mask_strat
+        self.auto_encoding_mask_type = auto_encoding_mask_type
+        self.state_encoding_mask_type = state_encoding_mask_type
+        self.use_cls_token = use_cls_token
+        self.action_dim = action_dim
         self.device = device
-        # extract some hyperparameters and functions from encoder (vision transformer to be trained)
+        self.tokenizer = tokenizer
+        self.total_num_patches = (self.tokenizer.num_patches**2) * self.tokenizer.num_timesteps
+        self.enc = encoder
+        self.dec = decoder
 
-        self.encoder = encoder
-        self.repr_dim = 49 * self.encoder.dim
-        num_patches, encoder_dim = encoder.pos_embedding.shape[-2:]
-        self.to_patch, self.patch_to_emb = encoder.to_patch_embedding[:2]
-        pixel_values_per_patch = self.patch_to_emb.weight.shape[-1]
         # decoder parameters
+        self.enc_to_dec = nn.Linear(self.enc.dim, self.dec.dim) if self.enc.dim != self.dec.dim else nn.Identity()
+        self.project_action = nn.Linear(self.action_dim, action_encoding_dim)
+        self.mask_token = nn.Parameter(torch.randn(self.dec.dim))
+        self.dec_pos_emb = nn.Embedding(self.total_num_patches, self.dec.dim)
 
-        self.enc_to_dec = nn.Linear(encoder_dim, decoder_dim) if encoder_dim != decoder_dim else nn.Identity()
-        self.mask_token = nn.Parameter(torch.randn(decoder_dim))
-        self.decoder = Transformer(
-            dim=decoder_dim,
-            depth=decoder_depth,
-            heads=decoder_heads,
-            dim_head=decoder_dim_head,
-            mlp_dim=decoder_dim * 4,
+        # We can optionally use the cls token as input to the actor and critic
+        if self.use_cls_token:
+            self.out_dim = self.enc.dim
+        elif not self.use_cls_token and self.state_encoding_mask_type == "mae-uniform":
+            self.out_dim = int((1 - self.masking_ratio) * self.total_num_patches) * self.enc.dim
+        elif not self.use_cls_token and self.state_encoding_mask_type == "temporal-multinoulli":
+            self.out_dim = int(self.total_num_patches // self.tokenizer.num_timesteps) * self.enc.dim
+        else:
+            raise ValueError("what")
+
+        if use_last_ln:
+            self.from_embedding = nn.Sequential(
+                nn.LayerNorm(self.dec.dim), nn.Linear(self.dec.dim, self.tokenizer.patch_dim)
+            )
+        else:
+            self.from_embedding = nn.Sequential(nn.Linear(self.dec.dim, self.tokenizer.patch_dim))
+
+    def compute_masks(self, batch_size, seq_len, mask_type):
+
+        mask = torch.ones(batch_size, self.total_num_patches, device=self.device, dtype=torch.bool)
+
+        if mask_type == "mae-uniform":
+            num_masked = int(self.masking_ratio * self.total_num_patches)
+            rand_indices = torch.rand(batch_size, self.total_num_patches, device=self.device).argsort(dim=-1)
+            masked_indices = rand_indices[:, :num_masked]
+            mask[masked_indices] = 1
+        elif mask_type == "temporal-multinoulli":
+            num_masked = self.total_num_patches // seq_len
+            dist = Categorical(torch.ones(seq_len, device=self.device) / seq_len)
+            masked_indices = dist.sample((batch_size, num_masked))
+            masked_indices = F.one_hot(masked_indices, num_classes=seq_len)
+            masked_indices = rearrange(masked_indices, "b p s -> b (p s)")
+            unmasked_indices = rearrange(
+                (masked_indices - 1).nonzero()[:, 1], "(b m) -> b m", m=self.total_num_patches - num_masked
+            )
+            masked_indices = rearrange(masked_indices.nonzero()[:, 1], "(b m) -> b m", m=num_masked)
+        elif mask_type == "nfp":
+            num_masked = self.total_num_patches // seq_len
+            indices = torch.arange(0, self.total_num_patches, device=self.device).repeat(batch_size, 1)
+            unmasked_indices = indices[:, : self.total_num_patches - num_masked]
+            masked_indices = indices[:, self.total_num_patches - num_masked :]
+        elif mask_type == "hybrid-nfp-mae-uniform":
+            # initialize the mask
+            num_patches_minus_last_f = self.total_num_patches - self.total_num_patches // seq_len
+            num_to_mask = int(self.masking_ratio * (self.total_num_patches - self.total_num_patches // seq_len))
+
+            # Mask mae uniform
+            rand_indices = torch.rand(batch_size, num_patches_minus_last_f, device=self.device).argsort(dim=-1)
+            masked_indices = rand_indices[:, :num_to_mask]
+            unmasked_indices = rand_indices[:, num_to_mask:]
+
+            # Mask nfp and concatenate
+            last_frame_patches = torch.arange(
+                num_patches_minus_last_f, self.total_num_patches, device=self.device
+            ).repeat(batch_size, 1)
+            masked_indices = torch.cat([masked_indices, last_frame_patches], dim=1)
+        elif mask_type == "None":
+            masked_indices = torch.LongTensor([]).repeat(batch_size, 1)
+            unmasked_indices = torch.arange(self.total_num_patches, device=self.device).repeat(batch_size, 1)
+
+        else:
+            raise ValueError("invalid mask type")
+
+        if self.use_cls_token:
+            cls_token_index = torch.ones([1], device=self.device, dtype=torch.bool).repeat(batch_size, 1)
+            unmasked_indices = torch.cat([cls_token_index, unmasked_indices], dim=1)
+        return masked_indices, unmasked_indices
+
+    def forward(self, input, action=None, decode=False, mask_type="None"):
+        # input: (batch_size, num_timesteps, c, h ,w)
+        if len(input.shape) == 4:
+            input = input.unsqueeze(0)
+        if action is None:
+            action = torch.zeros(input.shape[0], self.action_dim, device=self.device)
+
+        masked_indices, unmasked_indices = self.compute_masks(
+            batch_size=input.shape[0], seq_len=input.shape[1], mask_type=mask_type
         )
-        self.decoder_pos_emb = nn.Embedding(num_patches, decoder_dim)
-        self.to_pixels = nn.Linear(decoder_dim, pixel_values_per_patch)
+        num_masked = masked_indices.shape[1]
+        batch_range = torch.arange(input.shape[0], device=self.device)[:, None]
 
-    def compute_masks(self, eval, num_patches, batch):
-        if eval:
-            masked_indices = torch.arange(0, device=self.device)
-            unmasked_indices = torch.arange(num_patches, device=self.device)
-            num_masked = 0
-        elif self.mask_strat == "all":
-            num_masked = int(self.masking_ratio * num_patches)
-            rand_indices = torch.rand(batch, num_patches, device=self.device).argsort(dim=-1)
-            masked_indices, unmasked_indices = rand_indices[:, :num_masked], rand_indices[:, num_masked:]
-        return masked_indices, unmasked_indices, num_masked
+        raw_patches = self.tokenizer.patchify(input)
+        masked_patches = raw_patches[batch_range, masked_indices]
 
-    def forward(self, img, eval=True):
-        if len(img.shape) == 3:
-            img = img.unsqueeze(0)
-        patches = self.to_patch(img)
-        batch, num_patches, *_ = patches.shape
+        embeds = self.tokenizer(input.clone())
+        unmasked_embeds = embeds[batch_range, unmasked_indices]
 
-        # patch to encoder tokens and add positions
-        tokens = self.patch_to_emb(patches)
-        tokens = tokens + self.encoder.pos_embedding[:, 1 : (num_patches + 1)]
-
-        # calculate of patches needed to be masked, and get random indices, dividing it up for mask vs unmasked
-        masked_indices, unmasked_indices, num_masked = self.compute_masks(eval, num_patches, batch)
-
-        # get the unmasked tokens to be encoded
-        batch_range = torch.arange(batch, device=self.device)[:, None]
-        tokens = tokens[batch_range, unmasked_indices]
-
-        # get the patches to be masked for the final reconstruction loss
-        masked_patches = patches[batch_range, masked_indices]
+        action = self.project_action(action.to(self.device))
+        if len(action.shape) == 1:
+            action = repeat(action, "c -> b t c", b=unmasked_embeds.shape[0], t=unmasked_embeds.shape[1])
+        else:
+            action = repeat(action, "b c -> b t c", t=unmasked_embeds.shape[1])
+        unmasked_embeds = torch.cat((unmasked_embeds, action), dim=-1)
 
         # attend with vision transformer
-        encoded_tokens = self.encoder.transformer(tokens)
+        encoded_tokens = self.enc(unmasked_embeds)
 
-        # If we're in eval mode, we just return the encoded image
-        if eval:
-            return encoded_tokens.view(encoded_tokens.shape[0], -1)
+        # Return an embedding for control
+        if not decode:
+            if self.use_cls_token:
+                return encoded_tokens[:, 0]
+            else:
+                return encoded_tokens
 
-        # project encoder to decoder dimensions, if they are not equal - the paper says you can get away with a smaller dimension for decoder
         decoder_tokens = self.enc_to_dec(encoded_tokens)
-
-        # reapply decoder position embedding to unmasked tokens
-        decoder_tokens = decoder_tokens + self.decoder_pos_emb(unmasked_indices)
+        decoder_tokens = decoder_tokens + self.dec_pos_emb(unmasked_indices)
 
         # repeat mask tokens for number of masked, and add the positions using the masked indices derived above
-        mask_tokens = repeat(self.mask_token, "d -> b n d", b=batch, n=num_masked)
-        mask_tokens = mask_tokens + self.decoder_pos_emb(masked_indices)
+        mask_tokens = repeat(self.mask_token, "d -> b n d", b=input.shape[0], n=num_masked)
+
+        mask_tokens = mask_tokens + self.dec_pos_emb(masked_indices)
 
         # concat the masked tokens to the decoder tokens and attend with decoder
         decoder_tokens = torch.cat((mask_tokens, decoder_tokens), dim=1)
-        decoded_tokens = self.decoder(decoder_tokens)
+        decoded_tokens = self.dec(decoder_tokens)
 
         # splice out the mask tokens and project to pixel values
         mask_tokens = decoded_tokens[:, :num_masked]
-        pred_pixel_values = self.to_pixels(mask_tokens)
+        pred_pixel_values = self.from_embedding(mask_tokens)
 
         # calculate reconstruction loss
-
         recon_loss = F.mse_loss(pred_pixel_values, masked_patches)
-        return recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches
+        return recon_loss, pred_pixel_values, masked_indices, unmasked_indices, input

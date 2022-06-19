@@ -1,6 +1,7 @@
+from collections import defaultdict
+
 import numpy as np
 import scipy.signal
-from collections import defaultdict
 from torch.utils.data import IterableDataset
 
 
