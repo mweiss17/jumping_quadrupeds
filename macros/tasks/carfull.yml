@@ -2,5 +2,5 @@ env:
   kwargs:
     name: gym-CarRacing-v0
     render_every: 5
-    action_repeat: 3
+    action_repeat: 5
     frame_stack: 3

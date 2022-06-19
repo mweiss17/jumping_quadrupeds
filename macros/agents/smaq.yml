@@ -22,7 +22,7 @@ agent:
     use_q_approx_loss: False
     use_masked_state_loss: False
     use_drqv2_augs: True
-    mae_update_optim_step: False
+    mae_update_optim_step: True
 
     stddev_schedule:
       name: linear
@@ -34,7 +34,7 @@ decoder:
   cls: ViT
   kwargs:
     dim: 256 #64 * nheads
-    depth: 3
+    depth: 1
     head_dim: 64
     heads: 4
     gelu_mult: 4
@@ -46,10 +46,10 @@ encoder:
     dim: 128
     head_dim: 64
     depth: 1
-    heads: 4
+    heads: 1
     dropout: 0.0
     emb_dropout: 0.0
-    gelu_mult: 4 #2
+    gelu_mult: 4
     qkv_bias: False
 
 tokenizer:
