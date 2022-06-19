@@ -4,6 +4,7 @@ env:
     render_every: 1 # (int): Frequency at which to create a video of a rollout.
     action_repeat: 2
     frame_stack: 3
+total_steps: 10000000 # (int): total steps to run the experiment
 
 #agent:
 #  name: drqv2

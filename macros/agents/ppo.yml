@@ -17,7 +17,7 @@ agent:
     log_std: 0.5 #0.8
     num_expl_steps: 4000
     freeze_encoder: False
-    update_every_steps: 1000
+    update_every_steps: 334
 
 
 ### On-Policy Buffer Configuration ###
