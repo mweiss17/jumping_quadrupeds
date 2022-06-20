@@ -157,7 +157,7 @@ class OffPolicyReplayBuffer(IterableDataset):
         self._samples_since_last_fetch += 1
         episode = self._sample_episode()
         # add +1 for the first dummy transition
-        idx = np.random.randint(0, episode_len(episode) - self._nstep) + 1
+        idx = np.random.randint(0, max(episode_len(episode) - self._nstep, 1)) + 1
         obs = episode["observation"][idx - 1]
         action = episode["action"][idx]
         next_obs = episode["observation"][idx + self._nstep - 1]

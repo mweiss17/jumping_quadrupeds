@@ -26,7 +26,7 @@ agent:
       name: linear
       start: 1.0
       end: 0.1
-      num_steps: 100000 # 100000
+      num_steps: 100000
 
 decoder:
   cls: ViT
