@@ -63,7 +63,8 @@ class ReplayBufferStorage:
                 value = self._current_episode[spec.name]
                 episode[spec.name] = np.array(value, spec.dtype)
             self._current_episode = defaultdict(list)
-            self._store_episode(episode)
+            if len(episode) > 5:
+                self._store_episode(episode)
 
     def _preload(self):
         self._num_episodes = 0
@@ -157,7 +158,7 @@ class OffPolicyReplayBuffer(IterableDataset):
         self._samples_since_last_fetch += 1
         episode = self._sample_episode()
         # add +1 for the first dummy transition
-        idx = np.random.randint(0, max(episode_len(episode) - self._nstep, 1)) + 1
+        idx = np.random.randint(0, episode_len(episode) - self._nstep) + 1
         obs = episode["observation"][idx - 1]
         action = episode["action"][idx]
         next_obs = episode["observation"][idx + self._nstep - 1]
