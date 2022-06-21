@@ -63,7 +63,7 @@ class ReplayBufferStorage:
                 value = self._current_episode[spec.name]
                 episode[spec.name] = np.array(value, spec.dtype)
             self._current_episode = defaultdict(list)
-            if len(episode) > 5:
+            if episode_len(episode) > 5:
                 self._store_episode(episode)
 
     def _preload(self):
