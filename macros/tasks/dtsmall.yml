@@ -1,8 +1,8 @@
 env:
   kwargs:
     name: gym-Duckietown-small_loop-v0
-    render_every: 1 # (int): Frequency at which to create a video of a rollout.
-    action_repeat: 5
+    render_every: 10 # (int): Frequency at which to create a video of a rollout.
+    action_repeat: 2
     frame_stack: 3
 total_steps: 10000000 # (int): total steps to run the experiment
 
