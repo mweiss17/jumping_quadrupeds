@@ -1,7 +1,7 @@
-### MAE Agent Base Configuration ###
+### SMAQ Agent Base Configuration ###
 agent:
-  cls: MAEAgent
-  name: mae
+  cls: SMAQAgent
+  name: smaq
   kwargs:
     lr: 1e-4
     critic_lr: 1e-3 # 1e-4
@@ -20,7 +20,7 @@ agent:
     use_q_approx_loss: False
     use_masked_state_loss: False
     use_drqv2_augs: True
-    mae_update_optim_step: True
+    smaq_update_optim_step: True
 
     stddev_schedule:
       name: linear
@@ -61,7 +61,7 @@ model:
   kwargs:
     use_last_ln: True
     use_cls_token: True
-    auto_encoding_mask_type: hybrid-nfp-mae-uniform # temporal-multinoulli, hybrid-nfp-multinoulli, nfp, mae-uniform
+    auto_encoding_mask_type: hybrid-nfp-smaq-uniform # temporal-multinoulli, hybrid-nfp-multinoulli, nfp, smaq-uniform
     state_encoding_mask_type: "None" #temporal-multinoulli
     action_encoding_dim: 3
 

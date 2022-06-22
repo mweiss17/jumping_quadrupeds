@@ -13,7 +13,7 @@ from jumping_quadrupeds import tokenizers
 from jumping_quadrupeds.buffer import ReplayBufferStorage
 from jumping_quadrupeds.drqv2.agent import DrQV2Agent
 from jumping_quadrupeds.env import make_env
-from jumping_quadrupeds.mae import networks
+from jumping_quadrupeds.smaq import networks
 from jumping_quadrupeds.ppo.agent import PPOAgent
 from jumping_quadrupeds.spr.agent import SPRAgent
 from jumping_quadrupeds.utils import DataSpec, preprocess_obs, set_seed, buffer_loader_factory
@@ -94,7 +94,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.get("buffer/kwargs/jumps"),
                 **self.get("agent/kwargs"),
             )
-        elif self.get("agent/name") == "mae":
+        elif self.get("agent/name") == "smaq":
             # Make the tokenizer
             tokenizer_cls = getattr(tokenizers, self.get("tokenizer/cls"))
             tokenizer_kwargs = dict(self.get("tokenizer/kwargs"))
@@ -128,7 +128,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             model_ema.load_state_dict(model.state_dict())
 
             # Make the agent
-            from jumping_quadrupeds.mae import agent
+            from jumping_quadrupeds.smaq import agent
 
             agent_cls = getattr(agent, self.get("agent/cls"))
             agent_kwargs = dict(self.get("agent/kwargs"))
@@ -242,7 +242,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 if (self.step % self.get("log_every")) == 0:
                     metrics = self.compute_env_specific_metrics(metrics)
                     if self.get("use_wandb"):
-                        if self.get("agent/name") == "mae":
+                        if self.get("agent/name") == "smaq":
                             self.wandb_log_image("gt_img_viz", metrics["gt_img"])
                             self.wandb_log_image("pred_img_viz", metrics["pred_img"])
                             self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])

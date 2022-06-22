@@ -9,11 +9,11 @@ from einops import rearrange
 from torchvision.utils import make_grid
 
 from jumping_quadrupeds.augs import RandomShiftsAug
-from jumping_quadrupeds.mae.networks import Actor, Critic
+from jumping_quadrupeds.smaq.networks import Actor, Critic
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 
 
-class MAEAgent:
+class SMAQAgent:
     def __init__(
         self,
         action_space,
@@ -39,7 +39,7 @@ class MAEAgent:
         use_masked_state_loss=False,
         use_q_approx_loss=False,
         use_drqv2_augs=False,
-        mae_update_optim_step=False,
+        smaq_update_optim_step=False,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -55,7 +55,7 @@ class MAEAgent:
         self.use_masked_state_loss = use_masked_state_loss
         self.use_q_approx_loss = use_q_approx_loss
         self.use_drqv2_augs = use_drqv2_augs
-        self.mae_update_optim_step = mae_update_optim_step
+        self.smaq_update_optim_step = smaq_update_optim_step
 
         # models
         self.model = model
@@ -169,20 +169,20 @@ class MAEAgent:
         metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
         return metrics
 
-    def mae_update(self, obs, action):
+    def smaq_update(self, obs, action):
         recon_loss, pred_pixel_values, masked_indices, unmasked_indices, patches = self.model(
             obs, action=action, mask_type=self.model.auto_encoding_mask_type, decode=True
         )
         gt_img, pred_img, gt_masked_img = self.render_reconstruction(
             pred_pixel_values[0], patches[0], masked_indices[0], obs[0], seq_len=obs.shape[1]
         )
-        if self.mae_update_optim_step:
+        if self.smaq_update_optim_step:
             self.model_opt.zero_grad(set_to_none=True)
             recon_loss.backward()
             self.model_opt.step()
 
         return recon_loss, {
-            "mae_loss": recon_loss.detach().cpu().item(),
+            "smaq_loss": recon_loss.detach().cpu().item(),
             "gt_img": gt_img,
             "pred_img": pred_img,
             "gt_masked_img": gt_masked_img,
@@ -219,8 +219,8 @@ class MAEAgent:
         next_obs = preprocess_obs(next_obs, self.device)
 
         # update model
-        recon_loss, mae_metrics = self.mae_update(obs, action)
-        metrics.update(mae_metrics)
+        recon_loss, smaq_metrics = self.smaq_update(obs, action)
+        metrics.update(smaq_metrics)
         batch_size = obs.shape[0]
 
         # fold the batch in
@@ -267,7 +267,7 @@ class MAEAgent:
             critic_loss = critic_loss + approx_err
         if self.use_masked_state_loss:
             critic_loss = critic_loss + masked_state_mse
-        if not self.mae_update_optim_step:
+        if not self.smaq_update_optim_step:
             critic_loss = critic_loss + recon_loss
         critic_loss.backward()
         self.critic_opt.step()

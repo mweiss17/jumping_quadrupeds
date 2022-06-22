@@ -251,7 +251,7 @@ class SequentialMaskedAutoEncoder(nn.Module):
         # We can optionally use the cls token as input to the actor and critic
         if self.use_cls_token:
             self.out_dim = self.enc.dim
-        elif not self.use_cls_token and self.state_encoding_mask_type == "mae-uniform":
+        elif not self.use_cls_token and self.state_encoding_mask_type == "smaq-uniform":
             self.out_dim = int((1 - self.masking_ratio) * self.total_num_patches) * self.enc.dim
         elif not self.use_cls_token and self.state_encoding_mask_type == "temporal-multinoulli":
             self.out_dim = int(self.total_num_patches // self.tokenizer.num_timesteps) * self.enc.dim
@@ -269,7 +269,7 @@ class SequentialMaskedAutoEncoder(nn.Module):
 
         mask = torch.ones(batch_size, self.total_num_patches, device=self.device, dtype=torch.bool)
 
-        if mask_type == "mae-uniform":
+        if mask_type == "smaq-uniform":
             num_masked = int(self.masking_ratio * self.total_num_patches)
             rand_indices = torch.rand(batch_size, self.total_num_patches, device=self.device).argsort(dim=-1)
             masked_indices = rand_indices[:, :num_masked]
@@ -289,12 +289,12 @@ class SequentialMaskedAutoEncoder(nn.Module):
             indices = torch.arange(0, self.total_num_patches, device=self.device).repeat(batch_size, 1)
             unmasked_indices = indices[:, : self.total_num_patches - num_masked]
             masked_indices = indices[:, self.total_num_patches - num_masked :]
-        elif mask_type == "hybrid-nfp-mae-uniform":
+        elif mask_type == "hybrid-nfp-smaq-uniform":
             # initialize the mask
             num_patches_minus_last_f = self.total_num_patches - self.total_num_patches // seq_len
             num_to_mask = int(self.masking_ratio * (self.total_num_patches - self.total_num_patches // seq_len))
 
-            # Mask mae uniform
+            # Mask smaq uniform
             rand_indices = torch.rand(batch_size, num_patches_minus_last_f, device=self.device).argsort(dim=-1)
             masked_indices = rand_indices[:, :num_to_mask]
             unmasked_indices = rand_indices[:, num_to_mask:]
