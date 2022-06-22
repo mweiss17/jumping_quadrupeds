@@ -79,7 +79,8 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 self.wandb_watch(self.agent.ac.v, log_freq=1)
 
         elif self.get("agent/name") == "drqv2":
-            self.agent = DrQV2Agent(
+            tokenizer_cls = getattr(tokenizers, self.get("tokenizer/cls"))
+            self.agent = tokenizer_cls(
                 self.env.observation_space,
                 self.env.action_space,
                 self.device,
