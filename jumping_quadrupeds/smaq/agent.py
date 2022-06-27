@@ -9,7 +9,7 @@ from einops import rearrange
 from torchvision.utils import make_grid
 
 from jumping_quadrupeds.augs import RandomShiftsAug
-from jumping_quadrupeds.smaq.networks import Actor, Critic
+from jumping_quadrupeds.smaq.networks import Actor, Critic, DiscreteActor
 from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
 
 
@@ -60,12 +60,20 @@ class SMAQAgent:
         # models
         self.model = model
         self.model_ema = model_ema
-        self.actor = Actor(self.model.out_dim, action_space, feature_dim, hidden_dim, log_std_init, use_actor_ln).to(
-            device
-        )
+        if action_space.__class__.__name__ == "Discrete":
+            self.discrete_actions = True
+            action_dim = action_space.n
+            self.actor = DiscreteActor(self.model.out_dim, action_space, feature_dim, hidden_dim, log_std_init,
+                                       use_actor_ln).to(device)
 
-        self.critic = Critic(self.model.out_dim, action_space, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.model.out_dim, action_space, feature_dim, hidden_dim).to(device)
+        else:
+            self.discrete_actions = False
+            action_dim = action_space.shape[0]
+            self.actor = Actor(self.model.out_dim, action_space, feature_dim, hidden_dim, log_std_init,
+                               use_actor_ln).to(device)
+
+        self.critic = Critic(self.model.out_dim, action_dim, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.model.out_dim, action_dim, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
@@ -81,6 +89,11 @@ class SMAQAgent:
         self.train()
         self.critic_target.train()
 
+    def _convert_to_onehot(self, action):
+        onehot_converter = torch.eye(self.model.action_dim).to(device=self.device)
+        action = onehot_converter[action.long()]
+        return action
+
     def train(self, training=True):
         self.training = training
         self.model.train(training)
@@ -90,17 +103,27 @@ class SMAQAgent:
     def act(self, obs, action, step, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
         action = torch.as_tensor(action, device=self.device)
+        if self.discrete_actions:
+            action = self._convert_to_onehot(action)
 
         obs = self.model(obs, action=action, mask_type="None", decode=False)
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
 
         dist = self.actor(obs, stddev)
-        if eval_mode:
-            action = dist.mean
+        if self.discrete_actions:
+            if eval_mode:
+                action = torch.argmax(dist)
+            else:
+                action = dist.sample()
+                if step < self.num_expl_steps:
+                    action = torch.randint(high=3, size=dist.batch_shape).to(self.device)
         else:
-            action = dist.sample(clip=None)
-            if step < self.num_expl_steps:
-                action.uniform_(-1.0, 1.0)
+            if eval_mode:
+                action = dist.mean
+            else:
+                action = dist.sample(clip=None)
+                if step < self.num_expl_steps:
+                    action.uniform_(-1.0, 1.0)
         value = np.array([0.0], dtype=np.float32)
         log_p = dist.log_prob(action).detach().cpu().numpy()[0]
         action = action.detach().cpu().numpy()[0]
@@ -114,7 +137,11 @@ class SMAQAgent:
         with torch.no_grad():
             stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
             dist = self.actor(next_obs, stddev)
-            next_action = dist.sample(clip=self.stddev_clip)
+            if self.discrete_actions:
+                next_action = dist.sample()
+                next_action = self._convert_to_onehot(next_action)
+            else:
+                next_action = dist.sample(clip=self.stddev_clip)
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2)
             target_Q = reward + (discount * target_V)
@@ -150,8 +177,13 @@ class SMAQAgent:
 
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
         dist = self.actor(obs, stddev)
-        action = dist.sample(clip=self.stddev_clip)
+        if self.discrete_actions:
+            action = dist.sample()
+        else:
+            action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+        if self.discrete_actions:
+            action = self._convert_to_onehot(action)
         Q1, Q2 = self.critic(obs, action)
         Q = torch.min(Q1, Q2)
 
@@ -215,6 +247,8 @@ class SMAQAgent:
         metrics = dict()
 
         obs, action, reward, discount, next_obs = to_torch(next(replay_loader), self.device)
+        if self.discrete_actions:
+            action = self._convert_to_onehot(action)
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
 

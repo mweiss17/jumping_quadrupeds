@@ -79,14 +79,43 @@ class Actor(nn.Module):
         return dist
 
 
+class DiscreteActor(nn.Module):
+    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim, log_std, use_actor_ln):
+        super().__init__()
+        self.action_space = action_space
+        if use_actor_ln:
+            self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
+        else:
+            self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.Tanh())
+
+        self.policy = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, action_space.n),
+            nn.Softmax(dim=-1),
+        )
+
+        self.apply(weight_init)
+
+    def forward(self, obs, std=None):
+        h = self.trunk(obs)
+
+        action_dist = self.policy(h)
+        action_dist = Categorical(action_dist)
+        # TODO: Add something for temperature
+        return action_dist
+
+
 class Critic(nn.Module):
-    def __init__(self, repr_dim, action_space, feature_dim, hidden_dim):
+    def __init__(self, repr_dim, action_dim, feature_dim, hidden_dim):
         super().__init__()
 
         self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim), nn.LayerNorm(feature_dim), nn.Tanh())
 
         self.Q1 = nn.Sequential(
-            nn.Linear(feature_dim + action_space.shape[0], hidden_dim),
+            nn.Linear(feature_dim + action_dim, hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(inplace=True),
@@ -94,7 +123,7 @@ class Critic(nn.Module):
         )
 
         self.Q2 = nn.Sequential(
-            nn.Linear(feature_dim + action_space.shape[0], hidden_dim),
+            nn.Linear(feature_dim + action_dim, hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(inplace=True),

@@ -44,7 +44,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
     def _build_buffer(self):
         data_specs = [
             DataSpec("observation", self.env.observation_space.shape, np.uint8),
-            DataSpec("action", self.env.action_space.shape, np.float32),
+            DataSpec("action", self.env.action_space.shape, self.env.action_space.dtype),
             DataSpec("reward", (1,), np.float32),
             DataSpec("discount", (1,), np.float32),
         ]
@@ -114,12 +114,16 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             # Make the model
             model_cls = getattr(networks, self.get("model/cls"))
             model_kwargs = dict(self.get("model/kwargs"))
+            if self.env.action_space.__class__.__name__ == "Discrete":
+                action_dim = self.env.action_space.n
+            else:
+                action_dim = self.env.action_space.shape[0]
             model_kwargs.update(
                 {
                     "tokenizer": tokenizer,
                     "encoder": encoder,
                     "decoder": decoder,
-                    "action_dim": self.env.action_space.shape[0],
+                    "action_dim": action_dim,
                     "device": self.device,
                 }
             )
