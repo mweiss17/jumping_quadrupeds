@@ -94,17 +94,15 @@ class DiscreteActor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(inplace=True),
             nn.Linear(hidden_dim, action_space.n),
-            nn.Softmax(dim=-1),
         )
 
         self.apply(weight_init)
 
     def forward(self, obs, std=None):
         h = self.trunk(obs)
-
         action_dist = self.policy(h)
+        action_dist = F.softmax(action_dist / (std*10.0), dim=-1)  # at std=0.1 (min_val by default), no temp is applied
         action_dist = Categorical(action_dist)
-        # TODO: Add something for temperature
         return action_dist
 
 

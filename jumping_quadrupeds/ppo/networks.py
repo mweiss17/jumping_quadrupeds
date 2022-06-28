@@ -1,7 +1,8 @@
 import torch
 from einops import rearrange
 from torch import nn
-
+from torch.distributions import Categorical
+import torch.nn.functional as F
 from jumping_quadrupeds.eth.encoders import WorldModelsConvEncoder
 from jumping_quadrupeds.utils import TruncatedNormal
 
@@ -81,6 +82,26 @@ class CNNGaussianActor(Actor):
         return pi.log_prob(act)
 
 
+class CNNDiscreteActor(Actor):
+    def __init__(self, encoder, action_space, hidden_sizes, log_std):
+        super().__init__()
+        self.encoder = encoder
+        self.action_space = action_space
+        self.linear = nn.Linear(64 * hidden_sizes, self.action_space.n)
+
+    def _distribution(self, obs):
+        obs = rearrange(obs, "b t c w h -> b (t c) w h")
+        preactivations = self.encoder(obs)
+
+        # apply linear processing
+        action_dist = F.softmax(self.linear(preactivations), dim=-1)
+        action_dist = Categorical(action_dist)
+        return action_dist
+
+    def _log_prob_from_distribution(self, pi, act):
+        return pi.log_prob(act)
+
+
 class CNNCritic(nn.Module):
     def __init__(self, encoder, hidden_sizes):
         super().__init__()
@@ -107,12 +128,23 @@ class ConvActorCritic(AbstractActorCritic):
         channels = observation_space.shape[1]
         actor_encoder = WorldModelsConvEncoder(channels * timesteps)
         critic_encoder = actor_encoder if shared_encoder else WorldModelsConvEncoder(channels * timesteps)
-        self.pi = CNNGaussianActor(
-            actor_encoder,
-            action_space,
-            hidden_sizes,  # 4 * 4 square scaling factor for base-racing
-            log_std,
-        )
+
+        if action_space.__class__.__name__ == "Discrete":
+            self.discrete_actions = True
+            self.pi = CNNDiscreteActor(
+                actor_encoder,
+                action_space,
+                hidden_sizes,  # 4 * 4 square scaling factor for base-racing
+                log_std,
+            )
+        else:
+            self.discrete_actions = False
+            self.pi = CNNGaussianActor(
+                actor_encoder,
+                action_space,
+                hidden_sizes,  # 4 * 4 square scaling factor for base-racing
+                log_std,
+            )
 
         # build value function
         self.v = CNNCritic(critic_encoder, hidden_sizes)
@@ -135,10 +167,13 @@ class ConvActorCritic(AbstractActorCritic):
             if len(obs.shape) == 3:
                 obs = obs.unsqueeze(0)
             pi = self.pi._distribution(obs)
-            if eval_mode:
-                a = pi.mean()
-            else:
+            if self.discrete_actions:
                 a = pi.sample()
+            else:
+                if eval_mode:
+                    a = pi.mean()
+                else:
+                    a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             v = self.v(obs)
         return (

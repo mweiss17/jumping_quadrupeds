@@ -10,7 +10,7 @@ from torchvision.utils import make_grid
 
 from jumping_quadrupeds.augs import RandomShiftsAug
 from jumping_quadrupeds.smaq.networks import Actor, Critic, DiscreteActor
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs, convert_action_to_onehot
 
 
 class SMAQAgent:
@@ -62,18 +62,18 @@ class SMAQAgent:
         self.model_ema = model_ema
         if action_space.__class__.__name__ == "Discrete":
             self.discrete_actions = True
-            action_dim = action_space.n
+            self.action_dim = action_space.n
             self.actor = DiscreteActor(self.model.out_dim, action_space, feature_dim, hidden_dim, log_std_init,
                                        use_actor_ln).to(device)
 
         else:
             self.discrete_actions = False
-            action_dim = action_space.shape[0]
+            self.action_dim = action_space.shape[0]
             self.actor = Actor(self.model.out_dim, action_space, feature_dim, hidden_dim, log_std_init,
                                use_actor_ln).to(device)
 
-        self.critic = Critic(self.model.out_dim, action_dim, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.model.out_dim, action_dim, feature_dim, hidden_dim).to(device)
+        self.critic = Critic(self.model.out_dim, self.action_dim, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.model.out_dim, self.action_dim, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
@@ -89,11 +89,6 @@ class SMAQAgent:
         self.train()
         self.critic_target.train()
 
-    def _convert_to_onehot(self, action):
-        onehot_converter = torch.eye(self.model.action_dim).to(device=self.device)
-        action = onehot_converter[action.long()]
-        return action
-
     def train(self, training=True):
         self.training = training
         self.model.train(training)
@@ -104,7 +99,7 @@ class SMAQAgent:
         obs = torch.as_tensor(obs, device=self.device)
         action = torch.as_tensor(action, device=self.device)
         if self.discrete_actions:
-            action = self._convert_to_onehot(action)
+            action = convert_action_to_onehot(action, action_dim=self.action_dim)
 
         obs = self.model(obs, action=action, mask_type="None", decode=False)
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
@@ -139,7 +134,7 @@ class SMAQAgent:
             dist = self.actor(next_obs, stddev)
             if self.discrete_actions:
                 next_action = dist.sample()
-                next_action = self._convert_to_onehot(next_action)
+                next_action = convert_action_to_onehot(next_action, action_dim=self.action_dim)
             else:
                 next_action = dist.sample(clip=self.stddev_clip)
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
@@ -183,7 +178,7 @@ class SMAQAgent:
             action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
         if self.discrete_actions:
-            action = self._convert_to_onehot(action)
+            action = convert_action_to_onehot(action, self.action_dim)
         Q1, Q2 = self.critic(obs, action)
         Q = torch.min(Q1, Q2)
 
@@ -248,7 +243,7 @@ class SMAQAgent:
 
         obs, action, reward, discount, next_obs = to_torch(next(replay_loader), self.device)
         if self.discrete_actions:
-            action = self._convert_to_onehot(action)
+            action = convert_action_to_onehot(action, self.action_dim)
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)
 
