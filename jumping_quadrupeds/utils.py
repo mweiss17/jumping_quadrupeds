@@ -257,3 +257,9 @@ def guess_mode(data):
     if data.shape[-1] == 4:
         return "RGBA"
     raise ValueError("Un-supported shape for image conversion %s" % list(data.shape))
+
+
+def convert_action_to_onehot(action, action_dim):
+    onehot_converter = torch.eye(action_dim).to(device=action.device)
+    action = onehot_converter[action.long()]
+    return action

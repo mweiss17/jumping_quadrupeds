@@ -8,8 +8,8 @@ import torch.nn.functional as F
 from einops import rearrange
 
 from jumping_quadrupeds.augs import RandomShiftsAug
-from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder
-from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs
+from jumping_quadrupeds.drqv2.networks import Actor, Critic, Encoder, DiscreteActor
+from jumping_quadrupeds.utils import soft_update_params, to_torch, schedule, preprocess_obs, convert_action_to_onehot
 
 
 class DrQV2Agent:
@@ -39,10 +39,19 @@ class DrQV2Agent:
         self.log_std_init = log_std_init
         # models
         self.encoder = Encoder(obs_space).to(device)
-        self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
+        # self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
+        if action_space.__class__.__name__ == "Discrete":
+            self.discrete_actions = True
+            self.action_dim = action_space.n
+            self.actor = DiscreteActor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
 
-        self.critic = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
-        self.critic_target = Critic(self.encoder.repr_dim, action_space, feature_dim, hidden_dim).to(device)
+        else:
+            self.discrete_actions = False
+            self.action_dim = action_space.shape[0]
+            self.actor = Actor(self.encoder.repr_dim, action_space, feature_dim, hidden_dim, log_std_init).to(device)
+
+        self.critic = Critic(self.encoder.repr_dim, self.action_dim, feature_dim, hidden_dim).to(device)
+        self.critic_target = Critic(self.encoder.repr_dim, self.action_dim, feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
 
         # optimizers
@@ -67,12 +76,20 @@ class DrQV2Agent:
         obs = self.encoder(obs.unsqueeze(0))
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
         dist = self.actor(obs, stddev)
-        if eval_mode:
-            action = dist.mean
+        if self.discrete_actions:
+            if eval_mode:
+                action = torch.argmax(dist)
+            else:
+                action = dist.sample()
+                if step < self.num_expl_steps:
+                    action = torch.randint(high=3, size=dist.batch_shape).to(self.device)
         else:
-            action = dist.sample(clip=None)
-            if step < self.num_expl_steps:
-                action.uniform_(-1.0, 1.0)
+            if eval_mode:
+                action = dist.mean
+            else:
+                action = dist.sample(clip=None)
+                if step < self.num_expl_steps:
+                    action.uniform_(-1.0, 1.0)
         value = np.array([0.0], dtype=np.float32)
         log_p = dist.log_prob(action).detach().cpu().numpy()[0]
         action = action.detach().cpu().numpy()[0]
@@ -83,7 +100,11 @@ class DrQV2Agent:
         with torch.no_grad():
             stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
             dist = self.actor(next_obs, stddev)
-            next_action = dist.sample(clip=self.stddev_clip)
+            if self.discrete_actions:
+                next_action = dist.sample()
+                next_action = convert_action_to_onehot(next_action, action_dim=self.action_dim)
+            else:
+                next_action = dist.sample(clip=self.stddev_clip)
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2)
             target_Q = reward + (discount * target_V)
@@ -114,8 +135,13 @@ class DrQV2Agent:
 
         stddev, duration = schedule(self.stddev_schedule, step, self.log_std_init)
         dist = self.actor(obs, stddev)
-        action = dist.sample(clip=self.stddev_clip)
+        if self.discrete_actions:
+            action = dist.sample()
+        else:
+            action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+        if self.discrete_actions:
+            action = convert_action_to_onehot(action, self.action_dim)
         Q1, Q2 = self.critic(obs, action)
         Q = torch.min(Q1, Q2)
 
@@ -137,6 +163,8 @@ class DrQV2Agent:
     def update(self, replay_iter, step):
         metrics = dict()
         obs, action, reward, discount, next_obs = to_torch(next(replay_iter), self.device)
+        if self.discrete_actions:
+            action = convert_action_to_onehot(action, self.action_dim)
         batch_size = obs.shape[0]
         obs = preprocess_obs(obs, self.device)
         next_obs = preprocess_obs(next_obs, self.device)

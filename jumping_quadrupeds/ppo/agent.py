@@ -50,6 +50,10 @@ class PPOAgent:
         self.ep_len_mean = deque(maxlen=rew_smooth_len)
         self.total_steps = 0
         self.total_episodes = 0
+        if action_space.__class__.__name__ == "Discrete":
+            self.discrete_actions = True
+        else:
+            self.discrete_actions = False
 
         # policy and value networks
         self.ac = ConvActorCritic(
@@ -129,8 +133,9 @@ class PPOAgent:
             loss_v.backward()
             self.vf_optimizer.step()
 
-        metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
-        metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
+        if not self.discrete_actions:
+            metrics["update_actor_action_mean"] = action.detach().mean(axis=0).cpu().numpy()
+            metrics["update_actor_action_std"] = action.detach().std(axis=0).cpu().numpy()
         logp_mean = pi_info["logp"].detach().mean(axis=0).cpu().numpy()
         adv_mean = pi_info["adv"].detach().mean().cpu().numpy()
         adv_std = pi_info["adv"].detach().std().cpu().numpy()

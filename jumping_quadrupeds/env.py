@@ -261,7 +261,7 @@ class FrameSkipEnv(gym.Wrapper):
         return obs, total_reward, done, info
 
 
-def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, render_every=None, **kwargs):
+def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, render_every=None, discrete_action=False, **kwargs):
     if "Duckietown" in name:
         import gym_duckietown
 
@@ -285,7 +285,12 @@ def make_env(seed=-1, name=None, action_repeat=1, frame_stack=1, w=84, h=84, ren
         env = FrameSkipEnv(env, skip=action_repeat)
     else:
         raise ValueError(f"Unknown environment name: {name}.")
-    env = ActionScale(env, new_min=-1.0, new_max=1.0)
+
+    if discrete_action and "Duckietown" in name:
+        env = gym_duckietown.wrappers.DiscreteWrapper(env)
+    else:
+        env = ActionScale(env, new_min=-1.0, new_max=1.0)
+
     env = FrameStack(env, frame_stack)
     env = VideoWrapper(env, update_freq=render_every)
     env = ExtendedTimeStepWrapper(env)
