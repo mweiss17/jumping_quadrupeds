@@ -294,13 +294,11 @@ class SequentialMaskedAutoEncoder(nn.Module):
 
     def compute_masks(self, batch_size, seq_len, mask_type):
 
-        mask = torch.ones(batch_size, self.total_num_patches, device=self.device, dtype=torch.bool)
-
         if mask_type == "smaq-uniform":
             num_masked = int(self.masking_ratio * self.total_num_patches)
             rand_indices = torch.rand(batch_size, self.total_num_patches, device=self.device).argsort(dim=-1)
             masked_indices = rand_indices[:, :num_masked]
-            mask[masked_indices] = 1
+            unmasked_indices = rand_indices[:, num_masked:]
         elif mask_type == "temporal-multinoulli":
             num_masked = self.total_num_patches // seq_len
             dist = Categorical(torch.ones(seq_len, device=self.device) / seq_len)
