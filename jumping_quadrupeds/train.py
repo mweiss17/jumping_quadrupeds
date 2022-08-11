@@ -245,7 +245,7 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
                 if (self.step % self.get("log_every")) == 0:
                     metrics = self.compute_env_specific_metrics(metrics)
                     if self.get("use_wandb"):
-                        if self.get("agent/name") == "smaq":
+                        if self.get("agent/name") == "smaq" and self.get("agent/kwargs/smaq_train_reconstruction"):
                             self.wandb_log_image("gt_img_viz", metrics["gt_img"])
                             self.wandb_log_image("pred_img_viz", metrics["pred_img"])
                             self.wandb_log_image("gt_masked_img_viz", metrics["gt_masked_img"])
