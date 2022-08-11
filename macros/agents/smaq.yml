@@ -21,7 +21,7 @@ agent:
     use_masked_state_loss: False
     use_drqv2_augs: True
     smaq_update_optim_step: True
-
+    smaq_train_reconstruction: False
     stddev_schedule:
       name: linear
       start: 1.0

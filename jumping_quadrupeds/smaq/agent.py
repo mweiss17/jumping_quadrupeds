@@ -40,6 +40,7 @@ class SMAQAgent:
         use_q_approx_loss=False,
         use_drqv2_augs=False,
         smaq_update_optim_step=False,
+        smaq_train_reconstruction=False,
     ):
         self.device = device
         self.critic_target_tau = critic_target_tau
@@ -56,6 +57,7 @@ class SMAQAgent:
         self.use_q_approx_loss = use_q_approx_loss
         self.use_drqv2_augs = use_drqv2_augs
         self.smaq_update_optim_step = smaq_update_optim_step
+        self.smaq_train_reconstruction = smaq_train_reconstruction
 
         # models
         self.model = model
@@ -248,8 +250,9 @@ class SMAQAgent:
         next_obs = preprocess_obs(next_obs, self.device)
 
         # update model
-        recon_loss, smaq_metrics = self.smaq_update(obs, action)
-        metrics.update(smaq_metrics)
+        if self.smaq_train_reconstruction:
+            recon_loss, smaq_metrics = self.smaq_update(obs, action)
+            metrics.update(smaq_metrics)
         batch_size = obs.shape[0]
 
         # fold the batch in
