@@ -15,10 +15,11 @@ agent:
     update_every_steps: 2
     log_std_init: null # exp(-.5) = .6 set to null to disable
     weight_decay: 0.01
+    masking_ratio: 0.75
     use_actor_ln: True
     use_model_ema: True
     use_q_approx_loss: False
-    use_masked_state_loss: False
+    use_masked_state_loss: True
     use_drqv2_augs: True
     smaq_update_optim_step: True
     smaq_train_reconstruction: False
