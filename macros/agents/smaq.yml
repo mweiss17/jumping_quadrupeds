@@ -63,7 +63,7 @@ model:
     use_last_ln: True
     use_cls_token: True
     auto_encoding_mask_type: hybrid-nfp-smaq-uniform # temporal-multinoulli, hybrid-nfp-multinoulli, nfp, smaq-uniform
-    state_encoding_mask_type: "temporal-multinoulli"
+    state_encoding_mask_type: "smaq-uniform"
     action_encoding_dim: 3
     masking_ratio: 0.75
 
