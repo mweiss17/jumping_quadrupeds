@@ -15,7 +15,6 @@ agent:
     update_every_steps: 2
     log_std_init: null # exp(-.5) = .6 set to null to disable
     weight_decay: 0.01
-    masking_ratio: 0.75
     use_actor_ln: True
     use_model_ema: True
     use_q_approx_loss: False
@@ -51,6 +50,7 @@ encoder:
     gelu_mult: 4
     qkv_bias: False
 
+
 tokenizer:
   cls: "SpatioTemporalTokenizer"
   kwargs:
@@ -63,8 +63,10 @@ model:
     use_last_ln: True
     use_cls_token: True
     auto_encoding_mask_type: hybrid-nfp-smaq-uniform # temporal-multinoulli, hybrid-nfp-multinoulli, nfp, smaq-uniform
-    state_encoding_mask_type: "None" #temporal-multinoulli
+    state_encoding_mask_type: "temporal-multinoulli"
     action_encoding_dim: 3
+    masking_ratio: 0.75
+
 
 ### Off-Policy Buffer Configuration ###
 buffer:
