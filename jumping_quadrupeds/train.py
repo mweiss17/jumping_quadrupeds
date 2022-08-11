@@ -240,7 +240,6 @@ class Trainer(BaseExperiment, WandBMixin, IOMixin, submitit.helpers.Checkpointab
             self.replay_storage.add(time_step, val, logp)
 
             if self.update_now:
-
                 metrics = self.agent.update(self.replay_iter, self.step)
 
                 if (self.step % self.get("log_every")) == 0:
