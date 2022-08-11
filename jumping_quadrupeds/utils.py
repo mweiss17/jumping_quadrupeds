@@ -199,33 +199,22 @@ class BufferedShuffleDataset(IterableDataset[T_co]):
 
 
 def buffer_loader_factory(buffer_type=None, batch_size=None, **kwargs):
-    def _worker_init_fn(worker_id):
-        seed = np.random.get_state()[1][0] + worker_id
-        np.random.seed(seed)
-        random.seed(seed)
-
     if buffer_type == "on-policy":
         buffer = OnPolicyReplayBuffer(**kwargs)
-        buffer_size = batch_size
     elif buffer_type == "off-policy":
         buffer = OffPolicyReplayBuffer(**kwargs)
-        buffer_size = batch_size * kwargs.get("num_workers")
     elif buffer_type == "off-policy-sequential":
         buffer = OffPolicySequentialReplayBuffer(**kwargs)
-        buffer_size = batch_size * kwargs.get("num_workers")
-
     else:
         raise ValueError(
             f"Unknown replay buffer name: {buffer_type}. Have you specified your buffer correctly, a la `--macro templates/buffer/ppo.yml'?"
         )
-    if buffer_type == "off-policy":
-        buffer = BufferedShuffleDataset(buffer, buffer_size=buffer_size)
+
 
     loader = torch.utils.data.DataLoader(
         buffer,
         batch_size=batch_size,
         num_workers=kwargs.get("num_workers"),
-        worker_init_fn=_worker_init_fn,
         pin_memory=True,
     )
     return loader
